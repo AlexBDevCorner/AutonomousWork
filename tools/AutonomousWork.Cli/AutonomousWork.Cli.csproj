@@ -10,4 +10,8 @@
     <Description>Deterministic AutonomousWork control-repo CLI (validate, next). No AI involved.</Description>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\AutonomousWork.Core\AutonomousWork.Core.csproj" />
+  </ItemGroup>
+
 </Project>

@@ -17,7 +17,10 @@ AutonomousWork/
   templates/
     task.md
   tools/
-    AutonomousWork.Cli/   # `autonomous-work` CLI (validate, next)
+    AutonomousWork.Core/    # shared model: RepoLoader (validate), WorkSelector (next)
+    AutonomousWork.Cli/     # `autonomous-work` CLI (validate, next)
+    AutonomousWork.Tests/   # deterministic xUnit tests over Core
+  AutonomousWork.sln
   .github/
     workflows/
       validate.yml        # control-repo CI: bad planning never reaches the dispatcher
@@ -183,6 +186,8 @@ Roles in brackets are the only roles allowed to perform that step
 2. [Dispatcher] Scan `projects/*/tasks/*.md`; parse front matter.
 3. [Dispatcher] Eligible = `status == ready` AND all `depends_on` are `done`
    AND project has fewer than `max_active_tasks` tasks in `in_progress`.
+   Only `in_progress` counts as active work — `review` does not block
+   scheduling (stronger open-PR gating is planned for Step 10).
 4. [Dispatcher] Sort eligible by `priority` descending, then `id` ascending;
    pick first. If none eligible, stop — never invent work.
 5. [Dispatcher] Claim by committing `status: in_progress` before starting
@@ -195,14 +200,27 @@ Roles in brackets are the only roles allowed to perform that step
 
 ## Tooling (`autonomous-work` CLI)
 
-Deterministic .NET CLI in `tools/AutonomousWork.Cli`. No AI involved.
+Deterministic .NET solution (`AutonomousWork.sln`): `AutonomousWork.Core`
+holds the shared model — `RepoLoader` (validation) and `WorkSelector`
+(selection) — used by both the CLI and the xUnit test suite. No AI involved.
 
 ```sh
 dotnet run --project tools/AutonomousWork.Cli -- validate [--root <path>]
 dotnet run --project tools/AutonomousWork.Cli -- next [project-id] [--root <path>]
+dotnet test AutonomousWork.sln
 ```
 
 `--root` defaults to the current directory (run from the repo root).
+
+### Source of truth
+
+`autonomous-work validate` (C#) is authoritative. `schema/*.json` are
+supplemental — editor/IDE hints and human-readable documentation. Rationale:
+the safety-critical rules are cross-file (unique IDs, dependency existence
+and ordering, per-project capacity, section completeness) and cannot be
+expressed in JSON Schema at all. On any conflict between the schemas and the
+CLI, the CLI wins; keep the schemas in sync on a best-effort basis
+(same statuses, same `0–1000` priority range, same `Owner/Repo` pattern).
 
 ### `validate`
 
@@ -234,17 +252,28 @@ dotnet run --project tools/AutonomousWork.Cli -- next repomanager
 Exit codes: `0` + JSON object on stdout when work is available; `2` with
 empty stdout (reason on stderr) when there is nothing to do — disabled
 project, `max_active_tasks` reached, or no eligible `ready` task; `1` on
-errors (unknown project, validation errors — selection is refused when the
-control repo itself is invalid). Omit the project ID to select across all
-enabled projects. Section completeness is enforced by `validate` in CI, so
-bad planning never reaches the dispatcher.
+errors. Omit the project ID to select across all enabled projects.
+`next` runs the SAME full validation as `validate` first (structure AND
+required sections) and refuses selection when the control repo has any
+ERROR — there is no lenient mode, so bad planning can never reach the
+dispatcher even if it bypasses CI.
+
+### Tests
+
+`tools/AutonomousWork.Tests` (xUnit, 40+ tests) covers every validation rule
+and the full selection matrix — priority ordering, ID tie-break, dependency
+gating, disabled projects, capacity limits, unknown projects, invalid-repo
+refusal, and the `review`-does-not-block rule — against isolated synthetic
+fixture repos in temp directories (never the seed tasks). Run via
+`dotnet test AutonomousWork.sln`; CI runs the same command.
 
 ## CI
 
-`.github/workflows/validate.yml` runs `autonomous-work validate` on every
-push and pull request. A bad planning change (duplicate ID, bad status,
-dangling dependency, incomplete `ready` task, ...) fails the build before
-the dispatcher can ever see it.
+`.github/workflows/validate.yml` runs `autonomous-work validate` AND
+`dotnet test` on every push and pull request. A bad planning change
+(duplicate ID, bad status, dangling dependency, incomplete `ready` task,
+...) or a broken safety rule fails the build before the dispatcher can ever
+see it.
 
 ## Adding a new project
 
