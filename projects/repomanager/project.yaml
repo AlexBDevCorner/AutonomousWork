@@ -1,0 +1,5 @@
+id: repomanager
+name: RepoManager
+repository: AlexBDevCorner/RepoManager
+enabled: true
+max_active_tasks: 1

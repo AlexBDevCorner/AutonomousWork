@@ -1,0 +1,5 @@
+id: mandarinbotnet
+name: MandarinBotNet
+repository: AlexBDevCorner/MandarinBotNet
+enabled: true
+max_active_tasks: 1

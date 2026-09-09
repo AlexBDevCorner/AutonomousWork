@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/AlexBDevCorner/AutonomousWork/blob/main/schema/task.schema.json",
+  "title": "AutonomousWork Task Front Matter",
+  "description": "Validates the YAML front matter of projects/<project-id>/tasks/<TASK-ID>.md files.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "priority", "status", "depends_on"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Task ID. Globally unique across all projects. Must match file name <id>.md.",
+      "pattern": "^[A-Z]+-[0-9]+$",
+      "minLength": 1,
+      "maxLength": 32
+    },
+    "priority": {
+      "type": "integer",
+      "description": "Machine-readable priority. Higher number = execute first. Suggested range 0-1000.",
+      "minimum": 0,
+      "maximum": 1000
+    },
+    "status": {
+      "type": "string",
+      "description": "Execution state. Only 'ready' tasks (with dependencies done) are executable.",
+      "enum": ["draft", "ready", "in_progress", "review", "blocked", "done"]
+    },
+    "depends_on": {
+      "type": "array",
+      "description": "Task IDs that must be done before this task is eligible.",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Z]+-[0-9]+$"
+      },
+      "uniqueItems": true
+    }
+  }
+}
