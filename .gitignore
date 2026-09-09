@@ -1,0 +1,4 @@
+# .NET build outputs
+bin/
+obj/
+out/
