@@ -82,16 +82,86 @@ Rules:
   - `blocked` — cannot proceed, requires intervention.
   - `done` — completed and verified.
 
+### Ownership & authorization
+
+Five roles. Each role has an allow-list; everything else is forbidden.
+Agents must never "helpfully" act outside their role, even if blocked.
+
+- **Human** — owns intent and authorization:
+  - Creates tasks.
+  - Edits requirements (task body, acceptance criteria, `depends_on`).
+  - Changes `draft` → `ready`.
+  - Changes `priority`.
+  - Can pause projects (`enabled: false`).
+  - This is the only role that may do any of the above.
+
+- **Dispatcher** — selects ready work:
+  - Selects the next eligible `ready` task per Execution contract below.
+  - Starts execution (claims `ready` → `in_progress`).
+  - Never invents work: never creates tasks, never edits requirements,
+    never changes `draft` → `ready`, never changes `priority`.
+
+- **OpenCode** — implements exactly one selected task:
+  - Implements the single task claimed by the Dispatcher.
+  - Creates/updates the PR in the target repository.
+  - Never selects future tasks; never starts unclaimed work; never edits
+    task requirements, `priority`, or other tasks.
+
+- **ChatGPT** — reviews PRs:
+  - Reviews PRs against task acceptance criteria.
+  - Requests changes or approves.
+  - Never implements code; never commits to target repos.
+  - Never changes requirements (no edits to task files, no `priority` /
+    `depends_on` / body changes).
+
+- **Reconciler** — syncs execution state:
+  - Updates execution metadata/status (`in_progress` → `review` →
+    `done`, or → `blocked` with reason) based on observed Dispatcher /
+    OpenCode / ChatGPT outcomes.
+  - Never changes task content (no edits to goal, requirements,
+    acceptance criteria, `priority`, `depends_on`, or `id`).
+
+Authorization boundary:
+
+- `draft` → `ready` is the human authorization boundary. It is the only
+  transition that makes work executable, and only the Human may perform it.
+- No agent (Dispatcher, OpenCode, ChatGPT, Reconciler) may promote `draft`
+  to `ready`, edit requirements to make a task "ready enough", or infer
+  authorization from comments, PRs, or chat. If it is not `ready` in the
+  committed front matter, it does not execute. No exceptions.
+
+| Action | Human | Dispatcher | OpenCode | ChatGPT | Reconciler |
+| --- | :---: | :---: | :---: | :---: | :---: |
+| Create task | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Edit requirements / body | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `draft` → `ready` | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Change `priority` / `depends_on` | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Pause project (`enabled`) | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Select next `ready` task | ❌ | ✅ | ❌ | ❌ | ❌ |
+| Claim `ready` → `in_progress` | ❌ | ✅ | ❌ | ❌ | ❌ |
+| Implement task / open PR | ❌ | ❌ | ✅ (one claimed task) | ❌ | ❌ |
+| Review PR (approve / request changes) | ✅ | ❌ | ❌ | ✅ | ❌ |
+| Update status `in_progress`/`review`/`blocked`/`done` | ✅ | ❌ | ❌ | ❌ | ✅ |
+
 ### Execution contract (for workers)
 
-1. Scan `projects/*/project.yaml`; skip projects with `enabled: false`.
-2. Scan `projects/*/tasks/*.md`; parse front matter.
-3. Eligible = `status == ready` AND all `depends_on` are `done` AND project
-   has fewer than `max_active_tasks` tasks in `in_progress`.
-4. Sort eligible by `priority` descending, then `id` ascending; pick first.
-5. Claim by committing `status: in_progress` before starting work.
-6. On completion, set `status: review` (or `blocked` with reason in body).
-   Only a reviewer promotes `review` → `done`.
+Roles in brackets are the only roles allowed to perform that step
+(see Ownership & authorization above).
+
+1. [Dispatcher] Scan `projects/*/project.yaml`; skip projects with
+   `enabled: false`.
+2. [Dispatcher] Scan `projects/*/tasks/*.md`; parse front matter.
+3. [Dispatcher] Eligible = `status == ready` AND all `depends_on` are `done`
+   AND project has fewer than `max_active_tasks` tasks in `in_progress`.
+4. [Dispatcher] Sort eligible by `priority` descending, then `id` ascending;
+   pick first. If none eligible, stop — never invent work.
+5. [Dispatcher] Claim by committing `status: in_progress` before starting
+   work. [OpenCode] then implements exactly that one claimed task and
+   creates/updates the PR in the target repository.
+6. [Reconciler] On completion, set `status: review` (or `blocked` with reason
+   in body). [ChatGPT] reviews the PR (requests changes or approves).
+   [Reconciler] promotes `review` → `done` only after approval. Human may
+   override any status at any time.
 
 ## Adding a new project
 
