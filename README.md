@@ -185,9 +185,13 @@ Roles in brackets are the only roles allowed to perform that step
    `enabled: false`.
 2. [Dispatcher] Scan `projects/*/tasks/*.md`; parse front matter.
 3. [Dispatcher] Eligible = `status == ready` AND all `depends_on` are `done`
-   AND project has fewer than `max_active_tasks` tasks in `in_progress`.
-   Only `in_progress` counts as active work — `review` does not block
-   scheduling (stronger open-PR gating is planned for Step 10).
+   AND project has fewer than `max_active_tasks` tasks in `in_progress`
+   AND the project has no open `autonomous` PR in its target repository.
+   The open-PR check is the single-active-task rule (step 10): it is
+   enforced now by the worker's `guard` job and `autonomous-worker`
+   concurrency group, and the step-11 dispatcher must apply the same check
+   before triggering — `next` selects the candidate, the dispatcher gates
+   on open PRs.
 4. [Dispatcher] Sort eligible by `priority` descending, then `id` ascending;
    pick first. If none eligible, stop — never invent work.
 5. [Dispatcher] Claim by committing `status: in_progress` before starting
@@ -197,6 +201,33 @@ Roles in brackets are the only roles allowed to perform that step
    in body). [ChatGPT] reviews the PR (requests changes or approves).
    [Reconciler] promotes `review` → `done` only after approval. Human may
    override any status at any time.
+
+### Autonomous worker pilot (RepoManager — steps 8–10)
+
+No dispatcher yet (step 11). Dispatch is manual while OpenCode + GitHub App
++ OpenCode Go are validated independently.
+
+- Workflow: `autonomous-worker.yml` in `AlexBDevCorner/RepoManager`
+  (`.github/workflows/`), `workflow_dispatch` with `task_id`, `task_path`,
+  `control_repo`, `control_commit` (empty = default branch HEAD), `model`.
+- The worker checks out the target repo plus this control repo (read-only
+  `control/`), runs OpenCode Go with the stable wrapper prompt defined in
+  the workflow, and must end with exactly one PR on `autonomous/<TASK-ID>`.
+- Autonomous PR contract (step 9) — title `[<TASK-ID>] <description>`,
+  labels `autonomous` + `autonomous:opencode` + `task:<TASK-ID>`, body
+  sections `Task` / `Control specification` / `Implementation` /
+  `Verification` / `Autonomous execution`. This is the deterministic
+  `Task ↔ PR ↔ Repository` mapping: a task's PR is the open PR carrying its
+  `task:<ID>` label on `autonomous/<TASK-ID>`.
+- Single active task (step 10): per-repository `autonomous-worker`
+  concurrency group (`cancel-in-progress: false`, runs queue instead of
+  overlapping) plus a `guard` job that fails fast while a *different*
+  autonomous task has an open PR. Groups are per target repository, so
+  RepoManager and MandarinBotNet still progress concurrently.
+- Review-fix preview: `/oc …` comments by trusted actors
+  (`OWNER`/`MEMBER`/`COLLABORATOR`) re-run OpenCode on the same PR
+  (`opencode.yml` in the target repo). Round/attempt caps arrive with
+  step 16.
 
 ## Tooling (`autonomous-work` CLI)
 
