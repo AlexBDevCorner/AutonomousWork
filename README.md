@@ -155,12 +155,18 @@ Agents must never "helpfully" act outside their role, even if blocked.
 
 Authorization boundary:
 
-- `draft` → `ready` is the human authorization boundary. It is the only
-  transition that makes work executable, and only the Human may perform it.
+- `draft` → `ready` is the human authorization boundary, and only the Human
+  may perform it. Human authorization requires `ready`: a task that was
+  never `ready` never executes.
+- Automated execution additionally requires a valid Dispatcher claim:
+  the Dispatcher flips the authorized `ready` task to `in_progress` at a
+  pinned control commit and the worker executes exactly that claimed task.
+  By the time OpenCode runs, the status is therefore `in_progress`, not
+  `ready` — that is the claim working as designed, not a bypass.
 - No agent (Dispatcher, OpenCode, ChatGPT, Reconciler) may promote `draft`
   to `ready`, edit requirements to make a task "ready enough", or infer
-  authorization from comments, PRs, or chat. If it is not `ready` in the
-  committed front matter, it does not execute. No exceptions.
+  authorization from comments, PRs, or chat. Without the human `ready`
+  first, nothing downstream may execute it. No exceptions.
 
 | Action | Human | Dispatcher | OpenCode | ChatGPT | Reconciler |
 | --- | :---: | :---: | :---: | :---: | :---: |
@@ -178,25 +184,80 @@ Authorization boundary:
 ### Execution contract (for workers)
 
 Roles in brackets are the only roles allowed to perform that step
-(see Ownership & authorization above). The normative implementation is
-`autonomous-work next` — no AI is involved in selection.
+(see Ownership & authorization above). Selection uses two levels — local
+candidacy (control-repo state only, implemented exactly by
+`autonomous-work next`, no AI involved) and dispatch eligibility (which
+additionally observes remote target-repo state). The split exists so one
+blocked project can never starve the others.
 
 1. [Dispatcher] Scan `projects/*/project.yaml`; skip projects with
    `enabled: false`.
 2. [Dispatcher] Scan `projects/*/tasks/*.md`; parse front matter.
-3. [Dispatcher] Eligible = `status == ready` AND all `depends_on` are `done`
-   AND project has fewer than `max_active_tasks` tasks in `in_progress`.
-   Only `in_progress` counts as active work — `review` does not block
-   scheduling (stronger open-PR gating is planned for Step 10).
-4. [Dispatcher] Sort eligible by `priority` descending, then `id` ascending;
-   pick first. If none eligible, stop — never invent work.
+3. [Dispatcher] Local candidate per project = `status == ready` AND all
+   `depends_on` are `done` AND the project has fewer than
+   `max_active_tasks` tasks in `in_progress`. This is exactly what
+   `autonomous-work next <project-id>` returns — control-repo state only,
+   no remote calls.
+4. [Dispatcher] Dispatch eligibility: a project is dispatchable only if it
+   has a local candidate AND has no open `autonomous` PR in its target
+   repository (single-active-task rule, step 10 — enforced now by the
+   worker's `guard` job and `autonomous-worker` concurrency group). Take
+   one local candidate per dispatchable project, sort those candidates by
+   `priority` descending, then `id` ascending, and dispatch the first.
+   Example: RM-003 (priority 100) blocked by an open RepoManager PR must
+   not starve a free MB-002 (priority 90) — MB-002 dispatches. If no
+   project is dispatchable, stop — never invent work.
 5. [Dispatcher] Claim by committing `status: in_progress` before starting
-   work. [OpenCode] then implements exactly that one claimed task and
+   work, always passing the pinned control commit SHA to the worker.
+   [OpenCode] then implements exactly that one claimed task and
    creates/updates the PR in the target repository.
 6. [Reconciler] On completion, set `status: review` (or `blocked` with reason
    in body). [ChatGPT] reviews the PR (requests changes or approves).
    [Reconciler] promotes `review` → `done` only after approval. Human may
    override any status at any time.
+
+### Autonomous worker pilot (RepoManager — steps 8–10)
+
+No dispatcher yet (step 11). Dispatch is manual while OpenCode + GitHub App
++ OpenCode Go are validated independently.
+
+- Workflow: `autonomous-worker.yml` in `AlexBDevCorner/RepoManager`
+  (`.github/workflows/`), `workflow_dispatch` with `task_id`, `task_path`,
+  `control_repo`, `control_commit` (empty = default branch HEAD), `model`.
+  Target-repo secrets required: `OPENCODE_API_KEY` plus `CONTROL_REPO_TOKEN`
+  (fine-grained PAT, Contents: Read on this control repo only — the control
+  repo is private and a workflow token cannot read across repositories).
+- The worker checks out the target repo plus this control repo (read-only
+  `control/`), deterministically validates the task identity (spec exists,
+  file name and front-matter `id` match `task_id`, the spec's project maps
+  to the target repository), then requires eligibility: `autonomous-work
+  next <project>` at the pinned checkout must select exactly the dispatched
+  task, so manual dispatch cannot bypass `ready` / dependencies / `enabled`
+  / capacity rules. It records the exact control SHA, runs OpenCode Go with
+  the stable wrapper prompt defined in the workflow, and must end with
+  exactly one PR on `autonomous/<TASK-ID>` targeting `master`. (Step 11
+  replaces the `next` re-check with claimed-task validation, since the
+  Dispatcher will have moved the task to `in_progress` first.)
+- Autonomous PR contract (step 9) — title `[<TASK-ID>] <description>`,
+  labels `autonomous` + `autonomous:opencode` + `task:<TASK-ID>`, body
+  sections `Task` / `Control specification` / `Implementation` /
+  `Verification` / `Autonomous execution`, with `Control specification`
+  recording the pinned `<control-repo>@<sha>: <task-path>`. This is the
+  deterministic `Task ↔ PR ↔ Repository` mapping: a task's PR is the single
+  PR that has ever existed carrying its `task:<ID>` label on
+  `autonomous/<TASK-ID>` (retries reopen it; redispatch after merge fails).
+  Title and labels are auto-repaired; missing evidence sections fail the
+  run — verification results are never invented.
+- Single active task (step 10): per-repository `autonomous-worker`
+  concurrency group (`cancel-in-progress: false`, runs queue instead of
+  overlapping) plus a `guard` job that fails fast while a *different*
+  autonomous task has an open PR (detected by `autonomous` label or
+  `autonomous/` branch prefix). Groups are per target repository, so
+  RepoManager and MandarinBotNet still progress concurrently.
+- Review-fix preview: `/oc …` comments by trusted actors
+  (`OWNER`/`MEMBER`/`COLLABORATOR`) re-run OpenCode on the same PR
+  (`opencode.yml` in the target repo). Round/attempt caps arrive with
+  step 16.
 
 ## Tooling (`autonomous-work` CLI)
 
@@ -235,7 +296,8 @@ Warnings (e.g. incomplete `draft` tasks, shared repositories) never fail.
 
 ### `next`
 
-Implements the Execution contract exactly. Input is the project ID:
+Implements local candidate selection (Execution contract step 3) exactly —
+control-repo state only, no remote calls. Input is the project ID:
 
 ```sh
 dotnet run --project tools/AutonomousWork.Cli -- next repomanager
@@ -252,7 +314,11 @@ dotnet run --project tools/AutonomousWork.Cli -- next repomanager
 Exit codes: `0` + JSON object on stdout when work is available; `2` with
 empty stdout (reason on stderr) when there is nothing to do — disabled
 project, `max_active_tasks` reached, or no eligible `ready` task; `1` on
-errors. Omit the project ID to select across all enabled projects.
+errors. Omit the project ID to preview the global top local candidate
+across all enabled projects — but the step-11 dispatcher must NOT dispatch
+that result blindly: it calls `next <project>` per project without an open
+`autonomous` PR and sorts the returned candidates itself (Execution
+contract step 4), so a remotely blocked project never starves the rest.
 `next` runs the SAME full validation as `validate` first (structure AND
 required sections) and refuses selection when the control repo has any
 ERROR — there is no lenient mode, so bad planning can never reach the
