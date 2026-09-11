@@ -155,12 +155,18 @@ Agents must never "helpfully" act outside their role, even if blocked.
 
 Authorization boundary:
 
-- `draft` → `ready` is the human authorization boundary. It is the only
-  transition that makes work executable, and only the Human may perform it.
+- `draft` → `ready` is the human authorization boundary, and only the Human
+  may perform it. Human authorization requires `ready`: a task that was
+  never `ready` never executes.
+- Automated execution additionally requires a valid Dispatcher claim:
+  the Dispatcher flips the authorized `ready` task to `in_progress` at a
+  pinned control commit and the worker executes exactly that claimed task.
+  By the time OpenCode runs, the status is therefore `in_progress`, not
+  `ready` — that is the claim working as designed, not a bypass.
 - No agent (Dispatcher, OpenCode, ChatGPT, Reconciler) may promote `draft`
   to `ready`, edit requirements to make a task "ready enough", or infer
-  authorization from comments, PRs, or chat. If it is not `ready` in the
-  committed front matter, it does not execute. No exceptions.
+  authorization from comments, PRs, or chat. Without the human `ready`
+  first, nothing downstream may execute it. No exceptions.
 
 | Action | Human | Dispatcher | OpenCode | ChatGPT | Reconciler |
 | --- | :---: | :---: | :---: | :---: | :---: |
@@ -224,18 +230,24 @@ No dispatcher yet (step 11). Dispatch is manual while OpenCode + GitHub App
 - The worker checks out the target repo plus this control repo (read-only
   `control/`), deterministically validates the task identity (spec exists,
   file name and front-matter `id` match `task_id`, the spec's project maps
-  to the target repository), records the exact control SHA, runs OpenCode
-  Go with the stable wrapper prompt defined in the workflow, and must end
-  with exactly one PR on `autonomous/<TASK-ID>` targeting `master`.
+  to the target repository), then requires eligibility: `autonomous-work
+  next <project>` at the pinned checkout must select exactly the dispatched
+  task, so manual dispatch cannot bypass `ready` / dependencies / `enabled`
+  / capacity rules. It records the exact control SHA, runs OpenCode Go with
+  the stable wrapper prompt defined in the workflow, and must end with
+  exactly one PR on `autonomous/<TASK-ID>` targeting `master`. (Step 11
+  replaces the `next` re-check with claimed-task validation, since the
+  Dispatcher will have moved the task to `in_progress` first.)
 - Autonomous PR contract (step 9) — title `[<TASK-ID>] <description>`,
   labels `autonomous` + `autonomous:opencode` + `task:<TASK-ID>`, body
   sections `Task` / `Control specification` / `Implementation` /
   `Verification` / `Autonomous execution`, with `Control specification`
   recording the pinned `<control-repo>@<sha>: <task-path>`. This is the
   deterministic `Task ↔ PR ↔ Repository` mapping: a task's PR is the single
-  open PR carrying its `task:<ID>` label on `autonomous/<TASK-ID>`. Title
-  and labels are auto-repaired; missing evidence sections fail the run —
-  verification results are never invented.
+  PR that has ever existed carrying its `task:<ID>` label on
+  `autonomous/<TASK-ID>` (retries reopen it; redispatch after merge fails).
+  Title and labels are auto-repaired; missing evidence sections fail the
+  run — verification results are never invented.
 - Single active task (step 10): per-repository `autonomous-worker`
   concurrency group (`cancel-in-progress: false`, runs queue instead of
   overlapping) plus a `guard` job that fails fast while a *different*
