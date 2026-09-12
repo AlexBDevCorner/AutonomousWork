@@ -2,3 +2,7 @@
 bin/
 obj/
 out/
+
+# Local tooling/checkouts and generated review queue.
+.tools/
+automation/review-queue.json

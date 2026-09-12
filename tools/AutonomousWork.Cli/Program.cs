@@ -27,6 +27,16 @@ try
 {
     switch (command)
     {
+        case "catalog":
+        {
+            if (rest.Count != 0) throw new ArgumentException("catalog accepts only --root.");
+            var model = RepoLoader.Load(root, checkSections: true);
+            if (model.HasErrors)
+                throw new InvalidOperationException(string.Join("\n", model.Errors.Select(d => $"{d.File}: {d.Message}")));
+            Console.WriteLine(JsonSerializer.Serialize(new { model.Projects, model.Tasks },
+                new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
+            return ExitOk;
+        }
         case "validate":
             if (rest.Any(a => a.StartsWith('-')))
             {
@@ -76,8 +86,10 @@ static void PrintHelp()
         Usage:
           autonomous-work validate [--root <path>]
           autonomous-work next [project-id] [--root <path>]
+          autonomous-work catalog [--root <path>]
 
         Commands:
+          catalog    Export fully validated projects and tasks as JSON for orchestration.
           validate   Check projects/*/project.yaml and projects/*/tasks/*.md.
                      Exit 0 when clean, 1 when any ERROR is reported.
                      WARN lines never fail validation.

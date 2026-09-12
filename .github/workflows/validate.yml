@@ -16,3 +16,12 @@ jobs:
         run: dotnet run --project tools/AutonomousWork.Cli -- validate
       - name: Run CLI tests
         run: dotnet test AutonomousWork.sln --nologo
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test orchestration without GitHub writes
+        run: node --test tools/autonomy/*.test.mjs
+      - name: Validate automation configuration
+        run: |
+          dotnet build tools/AutonomousWork.Cli -c Release --nologo
+          node tools/autonomy/run.mjs --validate
