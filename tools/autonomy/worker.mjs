@@ -1,4 +1,4 @@
-import { readFileSync, appendFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { GitHub } from './github.mjs';
 import { load } from './run.mjs';
@@ -32,6 +32,17 @@ export function authorize({ catalog, state, config, taskId, taskPath, repository
   return { task, project };
 }
 
+export async function assertTaskSpecUnchanged(controlApi, config, taskPath, controlSha) {
+  // Compare Git blob SHAs via the Contents API, never working-tree text. A
+  // Windows checkout can be CRLF while the API blob is LF, so a byte-for-byte
+  // string comparison falsely reports an unchanged task as stale.
+  if (!/^[a-f0-9]{40}$/.test(controlSha ?? '')) throw new Error('Missing pinned control SHA; refusing the stale claim.');
+  const pinned = await controlApi.request('GET', `/repos/${config.controlRepository}/contents/${taskPath}?ref=${controlSha}`);
+  const live = await controlApi.request('GET', `/repos/${config.controlRepository}/contents/${taskPath}?ref=${config.controlBranch}`);
+  if (!pinned?.sha || !live?.sha) throw new Error('Task specification changed after dispatch; refusing the stale claim.');
+  if (live.sha !== pinned.sha) throw new Error('Task specification changed after dispatch; refusing the stale claim.');
+}
+
 async function main() {
   const mode = process.argv[2], root = resolve('control');
   const { catalog, state, config } = load(root);
@@ -57,8 +68,7 @@ async function main() {
     const liveProject = await readCurrent(selected.project.relativePath);
     if (!/^enabled:\s*true\s*(?:#.*)?$/m.test(liveProject) || !liveConfig.projects[selected.project.id]?.allowedTasks.includes(input.taskId) ||
         (input.attemptId && !liveConfig.enabled)) throw new Error('Current project/global/pilot switch disallows execution.');
-    const liveTask = await readCurrent(input.taskPath), pinnedTask = readFileSync(resolve(root, input.taskPath), 'utf8');
-    if (liveTask !== pinnedTask) throw new Error('Task specification changed after dispatch; refusing the stale claim.');
+    await assertTaskSpecUnchanged(controlApi, config, input.taskPath, process.env.CONTROL_SHA);
     if (input.attemptId) {
       const liveState = JSON.parse(await readCurrent('automation/state.json'));
       const live = liveState.executions.find(e => e.taskId === input.taskId);
