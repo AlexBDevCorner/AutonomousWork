@@ -77,6 +77,8 @@ export function reconcile(execution, snapshot, config, now) {
     }
     if (run.conclusion !== 'success') return block(`worker_${run.conclusion ?? 'failed'}`);
     if (!pr) return block('worker_succeeded_without_pull_request');
+    if (attempt.kind === 'correction' && pr.head.sha === attempt.headSha)
+      return block('correction_did_not_advance_head');
     return { ...result, status: 'review', blockReason: null };
   }
   // Never resend an uncertain POST. GitHub may have accepted it before the client timed out.

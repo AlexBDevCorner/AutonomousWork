@@ -107,6 +107,26 @@ test('successful worker without PR is a failure', () => {
   const f = fixture(); f.snapshot.runs = [completed()];
   assert.equal(reconcile(record(), f.snapshot, f.config, now).blockReason, 'worker_succeeded_without_pull_request');
 });
+test('correction that leaves the PR head unchanged blocks instead of deadlocking in review', () => {
+  const correctionId = '00000000-0000-0000-0000-000000000002';
+  const correctionRecord = () => {
+    const e = record();
+    e.attempts.push({ id: correctionId, kind: 'correction', startedAt: new Date(now - 60000).toISOString(),
+      sourceControlSha: sha, dispatchStatus: 'sent', reviewId: 12, headSha: sha });
+    return e;
+  };
+  const correctionRun = () => completed({ display_title: runTitle('RM-001', correctionId) });
+  // Same head SHA as the reviewed commit: the verifier must fail closed so the
+  // consumed review ID cannot leave the task stranded in review forever.
+  const f = fixture(); f.snapshot.prs = [pr()]; f.snapshot.runs = [correctionRun()];
+  const blocked = reconcile(correctionRecord(), f.snapshot, f.config, now);
+  assert.equal(blocked.status, 'blocked');
+  assert.equal(blocked.blockReason, 'correction_did_not_advance_head');
+  // An advanced head reaches review normally.
+  const g = fixture(); g.snapshot.prs = [pr({ head: { ref: 'autonomous/RM-001', sha: 'b'.repeat(40), repo: { full_name: 'Owner/Repo' } } })];
+  g.snapshot.runs = [correctionRun()];
+  assert.equal(reconcile(correctionRecord(), g.snapshot, f.config, now).status, 'review');
+});
 test('missing run waits for propagation then blocks without an automatic resend', () => {
   const f = fixture(); assert.equal(reconcile(record(), f.snapshot, f.config, now).status, 'in_progress');
   assert.equal(reconcile(record(), f.snapshot, f.config, now + 16 * 60000).blockReason, 'dispatch_not_observed');

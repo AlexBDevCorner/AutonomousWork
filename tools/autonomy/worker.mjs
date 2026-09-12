@@ -68,7 +68,7 @@ async function main() {
     const sameTitle = runTitle(input.taskId, input.attemptId || 'manual');
     const previous = runs.filter(r => r.id !== Number(process.env.GITHUB_RUN_ID) && r.display_title === sameTitle);
     if (input.attemptId && previous.length) throw new Error('This claim already has a workflow run.');
-    if (!input.attemptId && previous.length >= config.maxAttempts - 1) throw new Error('Manual pilot attempt limit reached.');
+    if (!input.attemptId && previous.length >= config.maxAttempts) throw new Error('Manual pilot attempt limit reached.');
     const today = new Date().toISOString().slice(0, 10);
     if (runs.filter(r => r.created_at.startsWith(today)).length > config.maxStartsPerProjectPerDay)
       throw new Error('Daily worker start limit reached.');
@@ -89,6 +89,10 @@ async function main() {
   if (mode !== 'verify') throw new Error('Expected guard or verify.');
   if (own.length !== 1) throw new Error('Worker must produce exactly one task PR.');
   const pr = await api.request('GET', `/repos/${input.repository}/pulls/${own[0].number}`);
+  if (input.mode === 'correction') {
+    if (!input.expectedHead) throw new Error('Correction verification requires the reviewed head SHA.');
+    if (pr.head.sha === input.expectedHead) throw new Error('Correction did not advance the PR head (correction_did_not_advance_head).');
+  }
   const files = await api.pages(`/repos/${input.repository}/pulls/${pr.number}/files`);
   if (files.some(f => [f.filename, f.previous_filename].filter(Boolean).some(p => p.startsWith('.github/') || p.startsWith('control/'))))
     throw new Error('Worker changed protected workflow/control files.');

@@ -72,8 +72,13 @@ queue is advisory; the reviewer must re-read GitHub before submitting a verdict.
 The current retry policy is intentionally conservative. Transient 5xx reads
 retry twice. A failed/uncertain dispatch is never resent automatically. It waits
 up to 15 minutes for a matching run, then blocks. A failed worker blocks even if
-it produced a partial PR. Closing an unmerged PR blocks the task; automation
-does not reopen it. A merge can still reconcile a blocked task to done.
+it produced a partial PR. A correction that succeeds without advancing the PR
+head past the reviewed SHA fails verification and reconciles to
+`correction_did_not_advance_head` instead of returning to review, so a consumed
+review ID can never deadlock the task. Closing an unmerged PR blocks the task;
+automation does not reopen it. A merge can still reconcile a blocked task to done.
+Manual pilot attempts are bounded by `maxAttempts` (three permits three manual
+model executions).
 
 For recovery, inspect the recorded run and PR first. Reconcile the task status
 and corresponding execution record together in a reviewed operator commit.
