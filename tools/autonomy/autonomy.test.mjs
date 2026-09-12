@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { chooseWork, reconcile, replaceStatus, runTitle, latestReview, ciGreen, validateConfig } from './policy.mjs';
 import { coordinate, validateState } from './coordinator.mjs';
-import { authorize } from './worker.mjs';
+import { authorize, assertTaskSpecUnchanged } from './worker.mjs';
 import { GitHub } from './github.mjs';
 
 const now = Date.parse('2026-09-12T12:00:00Z');
@@ -228,4 +228,31 @@ test('GitHub commit uses existing tree, exact parent and non-force reference upd
   assert.equal(JSON.parse(calls[2][1].body).base_tree, 'old-tree');
   assert.deepEqual(JSON.parse(calls[3][1].body).parents, [sha]);
   assert.equal(JSON.parse(calls[4][1].body).force, false);
+});
+test('task spec guard compares blob SHAs so Windows CRLF checkout cannot cause a false stale claim', async () => {
+  const config = { controlRepository: 'Owner/Repo', controlBranch: 'master' };
+  const taskPath = 'projects/repomanager/tasks/RM-001.md';
+  const sameShaApi = {
+    request: async (method, path) => {
+      if (path.endsWith('?ref=master')) return { sha: 'abc123', content: Buffer.from('id: RM-001\n', 'utf8').toString('base64') };
+      assert.match(path, new RegExp(`ref=${sha}$`));
+      return { sha: 'abc123', content: Buffer.from('id: RM-001\n', 'utf8').toString('base64') };
+    },
+  };
+  await assertTaskSpecUnchanged(sameShaApi, config, taskPath, sha);
+  // The old byte-for-byte comparison failed here: identical logical content looks
+  // different when the Windows working-tree file is CRLF and the API blob is LF.
+  const liveText = 'id: RM-001\nstatus: ready\n';
+  const windowsWorkingTreeText = 'id: RM-001\r\nstatus: ready\r\n';
+  assert.notEqual(liveText, windowsWorkingTreeText);
+  const changedApi = {
+    request: async (method, path) => {
+      if (path.endsWith('?ref=master')) return { sha: 'changed-blob-sha', content: Buffer.from('id: RM-001\nchanged\n', 'utf8').toString('base64') };
+      return { sha: 'abc123', content: Buffer.from('id: RM-001\n', 'utf8').toString('base64') };
+    },
+  };
+  await assert.rejects(() => assertTaskSpecUnchanged(changedApi, config, taskPath, sha),
+    /Task specification changed after dispatch/);
+  await assert.rejects(() => assertTaskSpecUnchanged(sameShaApi, config, taskPath, ''),
+    /Missing pinned control SHA/);
 });
