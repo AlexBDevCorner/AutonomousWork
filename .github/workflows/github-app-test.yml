@@ -12,6 +12,11 @@ jobs:
     steps:
       - name: Create GitHub App token
         id: app-token
+        # Production permission set required by the dispatcher (see docs/autonomy-operations.md
+        # and .github/workflows/dispatch.yml): control Contents write for state commits,
+        # target Actions write for workflow dispatches, Pull requests read for
+        # reconciliation, Checks read for build-and-test. Contents write is requested
+        # here to prove the App installation grants it, but this test never writes.
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ vars.AUTONOMOUS_APP_CLIENT_ID }}
@@ -21,8 +26,9 @@ jobs:
             AutonomousWork
             RepoManager
           permission-actions: write
-          permission-contents: read
+          permission-contents: write
           permission-pull-requests: read
+          permission-checks: read
 
       - name: Verify RepoManager access
         env:
@@ -35,3 +41,12 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           gh api repos/AlexBDevCorner/RepoManager/actions/workflows
+
+      - name: Verify Checks access
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          # Read-only check matching the dispatcher's Checks: read requirement
+          # (snapshot reads commits/<sha>/check-runs for autonomous PRs).
+          gh api repos/AlexBDevCorner/RepoManager/commits/master/check-runs --paginate || \
+            gh api repos/AlexBDevCorner/AutonomousWork/commits/master/check-runs --paginate
