@@ -1,0 +1,67 @@
+name: Autonomous dispatcher and reconciler
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Persist reconciliation and dispatch eligible work (config must also enable execution)"
+        type: boolean
+        default: false
+  # Add a schedule only after the controlled pilot and App permission check pass.
+concurrency:
+  group: autonomous-control
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  control:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: dotnet build tools/AutonomousWork.Cli -c Release --nologo
+      - run: node tools/autonomy/run.mjs --validate
+      - name: Create installation token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.AUTONOMOUS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTONOMOUS_APP_PRIVATE_KEY }}
+          owner: AlexBDevCorner
+          repositories: |
+            AutonomousWork
+            RepoManager
+          permission-contents: ${{ inputs.apply && 'write' || 'read' }}
+          permission-actions: ${{ inputs.apply && 'write' || 'read' }}
+          permission-pull-requests: read
+          permission-checks: read
+      - name: Reconcile and select work
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APPLY: ${{ inputs.apply }}
+        shell: bash
+        run: |
+          if [ "$APPLY" = "true" ]; then
+            node tools/autonomy/run.mjs --apply
+          else
+            node tools/autonomy/run.mjs
+          fi
+      - name: Publish operator summary
+        if: always()
+        shell: bash
+        run: test ! -f automation/STATUS.md || cat automation/STATUS.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: autonomous-status
+          path: |
+            automation/STATUS.md
+            automation/review-queue.json

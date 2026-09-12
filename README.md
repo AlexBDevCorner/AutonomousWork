@@ -6,6 +6,12 @@ projects, tasks, priorities, and execution state in a machine-readable way.
 Target repos are never described inline — each project maps to exactly one
 target GitHub repository (see `projects/<project-id>/project.yaml`).
 
+The dispatcher, reconciler and bounded worker contract are now implemented with
+automatic execution paused. See [the plan assessment](docs/autonomy-assessment.md),
+[deployment and operations](docs/autonomy-operations.md), and
+[the reviewer protocol](reviewer/CHATGPT_REVIEW.md). These distinguish tested
+code from the remaining live pilot and account-configuration checkpoints.
+
 ## Structure
 
 ```text
@@ -211,15 +217,18 @@ blocked project can never starve the others.
    work, always passing the pinned control commit SHA to the worker.
    [OpenCode] then implements exactly that one claimed task and
    creates/updates the PR in the target repository.
-6. [Reconciler] On completion, set `status: review` (or `blocked` with reason
-   in body). [ChatGPT] reviews the PR (requests changes or approves).
-   [Reconciler] promotes `review` → `done` only after approval. Human may
-   override any status at any time.
+6. [Reconciler] After a successful worker and observed PR, set `status: review`,
+   or `blocked` with a reason in the execution ledger. [ChatGPT] reviews the PR.
+   Approval does not complete the task: [Reconciler] sets `done` only after an
+   observed merge, recording its SHA and timestamp. Human status overrides must
+   reconcile the matching execution record in the same operator change.
 
 ### Autonomous worker pilot (RepoManager — steps 8–10)
 
-No dispatcher yet (step 11). Dispatch is manual while OpenCode + GitHub App
-+ OpenCode Go are validated independently.
+The original steps 8-10 pilot below describes the deployed workflow at assessment
+time. The replacement worker and dispatcher contract, including claimed-task
+validation, are described in [operations](docs/autonomy-operations.md). Deployment
+requires merging the control implementation before the target workflow change.
 
 - Workflow: `autonomous-worker.yml` in `AlexBDevCorner/RepoManager`
   (`.github/workflows/`), `workflow_dispatch` with `task_id`, `task_path`,
@@ -346,7 +355,8 @@ see it.
 1. Create `projects/<project-id>/project.yaml` (see `schema/project.schema.json`).
 2. Create `projects/<project-id>/tasks/` with at least one `*-001.md` task.
 3. Verify: unique IDs, valid `repository`, valid front matter.
-4. Commit and push. Workers pick it up automatically.
+4. Commit and push. Enroll the project and explicitly allowed pilot tasks in
+   `automation/config.json` only after its worker, authentication and CI are verified.
 
 ## Adding a new task
 

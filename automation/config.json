@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "enabled": false,
+  "controlRepository": "AlexBDevCorner/AutonomousWork",
+  "controlBranch": "master",
+  "projects": {
+    "repomanager": {
+      "branch": "master",
+      "workflow": "autonomous-worker.yml",
+      "allowedTasks": ["RM-001"]
+    }
+  },
+  "maxAttempts": 3,
+  "maxCorrectionRounds": 3,
+  "maxStartsPerProjectPerDay": 3,
+  "dispatchGraceMinutes": 15,
+  "maxRunMinutes": 60,
+  "reviewers": [],
+  "requiredChecks": ["build-and-test"]
+}
