@@ -14,11 +14,20 @@
    permissions only. Install it only on the participating repositories.
 4. The target still uses the existing `CONTROL_REPO_TOKEN` for private control
    reads and `OPENCODE_API_KEY` for OpenCode Go. Those are not copied into files.
-   GitHub authentication for the worker itself is the short-lived built-in
-   `GITHUB_TOKEN`, supplied explicitly to the OpenCode step with
-   `use_github_token: true` (plus `GH_TOKEN` for `gh`); no OIDC is required.
-   `CONTROL_REPO_TOKEN` and the target `GITHUB_TOKEN` serve different purposes
+   GitHub authentication for the worker itself is a short-lived GitHub App
+   installation token minted in the run and supplied explicitly to the OpenCode
+   step with `use_github_token: true` (as both `GITHUB_TOKEN` and `GH_TOKEN`
+   for `gh`); no OIDC is required. The built-in `GITHUB_TOKEN` is deliberately
+   not used for the OpenCode step: PRs it creates would leave `pull_request` CI
+   approval-required and stall unattended autonomy, while an App token lets CI
+   run automatically.
+   `CONTROL_REPO_TOKEN` and the worker App token serve different purposes
    and must remain separate.
+   Provisioning required in the target repository: `vars.AUTONOMOUS_APP_CLIENT_ID`
+   plus `secrets.AUTONOMOUS_APP_PRIVATE_KEY`, with the App installation on
+   RepoManager granting Contents, Pull requests, and Issues write. If the
+   installation currently grants less, update the App permissions and reinstall
+   before running the worker; token minting fails closed otherwise.
    Replacing the target read PAT with an installation token requires provisioning
    the App credentials in the target or an approved cross-repository token flow.
 5. Run the manual RM-001 pilot. The global automatic switch can stay off. It must
