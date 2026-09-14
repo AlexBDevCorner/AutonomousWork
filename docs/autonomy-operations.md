@@ -17,7 +17,10 @@
    GitHub authentication for the worker itself is a short-lived GitHub App
    installation token minted in the run and supplied explicitly to the OpenCode
    step with `use_github_token: true` (as both `GITHUB_TOKEN` and `GH_TOKEN`
-   for `gh`); no OIDC is required. The built-in `GITHUB_TOKEN` is deliberately
+   for `gh`); no OIDC is required. The same token is wired into git through
+   the GitHub CLI credential helper (`gh auth setup-git`) by the workflow, so
+   ordinary `git push` works without persisting the raw token. The built-in
+   `GITHUB_TOKEN` is deliberately
    not used for the OpenCode step: PRs it creates would leave `pull_request` CI
    approval-required and stall unattended autonomy, while an App token lets CI
    run automatically.
