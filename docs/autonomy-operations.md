@@ -14,6 +14,11 @@
    permissions only. Install it only on the participating repositories.
 4. The target still uses the existing `CONTROL_REPO_TOKEN` for private control
    reads and `OPENCODE_API_KEY` for OpenCode Go. Those are not copied into files.
+   GitHub authentication for the worker itself is the short-lived built-in
+   `GITHUB_TOKEN`, supplied explicitly to the OpenCode step with
+   `use_github_token: true` (plus `GH_TOKEN` for `gh`); no OIDC is required.
+   `CONTROL_REPO_TOKEN` and the target `GITHUB_TOKEN` serve different purposes
+   and must remain separate.
    Replacing the target read PAT with an installation token requires provisioning
    the App credentials in the target or an approved cross-repository token flow.
 5. Run the manual RM-001 pilot. The global automatic switch can stay off. It must
