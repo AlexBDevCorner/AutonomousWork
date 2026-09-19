@@ -7,9 +7,8 @@ import { autonomousPr, latestAttempt, latestReview, runTitle } from './policy.mj
 export function authorize({ catalog, state, config, taskId, taskPath, repository, attemptId, mode, reviewId, expectedHead }) {
   const task = catalog.tasks.find(t => t.id === taskId);
   const project = catalog.projects.find(p => p.id === task?.projectId);
-  if (!task || task.relativePath !== taskPath || project?.repository !== repository || !project.enabled)
-    throw new Error('Task identity, target repository, or project enablement is invalid.');
-  if (!config.projects[project.id]?.allowedTasks.includes(taskId)) throw new Error('Task is outside the pilot allowlist.');
+  if (!task || task.relativePath !== taskPath || project?.repository !== repository || !project.enabled || !config.projects[project.id])
+    throw new Error('Task identity, target repository, project enablement, or enrollment is invalid.');
   if (!task.dependsOn.every(id => catalog.tasks.find(t => t.id === id)?.status === 'done')) throw new Error('Unfinished task dependency.');
   const execution = state.executions.find(e => e.taskId === taskId);
   if (attemptId) {
@@ -66,8 +65,8 @@ async function main() {
     };
     const liveConfig = JSON.parse(await readCurrent('automation/config.json'));
     const liveProject = await readCurrent(selected.project.relativePath);
-    if (!/^enabled:\s*true\s*(?:#.*)?$/m.test(liveProject) || !liveConfig.projects[selected.project.id]?.allowedTasks.includes(input.taskId) ||
-        (input.attemptId && !liveConfig.enabled)) throw new Error('Current project/global/pilot switch disallows execution.');
+    if (!/^enabled:\s*true\s*(?:#.*)?$/m.test(liveProject) || !liveConfig.projects[selected.project.id] ||
+        (input.attemptId && !liveConfig.enabled)) throw new Error('Current project/global switch disallows execution.');
     await assertTaskSpecUnchanged(controlApi, config, input.taskPath, process.env.CONTROL_SHA);
     if (input.attemptId) {
       const liveState = JSON.parse(await readCurrent('automation/state.json'));
