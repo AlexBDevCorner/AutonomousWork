@@ -9,10 +9,8 @@ export function validateState(catalog, state, config) {
     if (repos.has(p.repository.toLowerCase())) throw new Error('Projects must have distinct target repositories.');
     repos.add(p.repository.toLowerCase());
   }
-  for (const [id, target] of Object.entries(config.projects)) {
+  for (const id of Object.keys(config.projects)) {
     if (!catalog.projects.some(p => p.id === id)) throw new Error(`Unknown enrolled project: ${id}`);
-    if (target.allowedTasks.some(id2 => !catalog.tasks.some(t => t.id === id2 && t.projectId === id)))
-      throw new Error(`Unknown pilot task in ${id}`);
   }
   for (const e of state.executions) {
     const task = catalog.tasks.find(t => t.id === e.taskId);
