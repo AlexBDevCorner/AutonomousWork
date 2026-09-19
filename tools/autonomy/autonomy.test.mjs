@@ -62,17 +62,18 @@ test('blocked recorded work holds a project even with no PR', () => {
 test('one blocked project does not starve an available project', () => {
   const f = fixture(); f.catalog.projects.push({ ...f.catalog.projects[0], id: 'other', repository: 'Owner/Other' });
   f.catalog.tasks.push({ ...f.catalog.tasks[0], id: 'OT-001', projectId: 'other', priority: 50 });
-  f.config.projects.other = { ...f.config.projects.repomanager, allowedTasks: ['OT-001'] };
+  f.config.projects.other = { ...f.config.projects.repomanager };
   const snapshots = { repomanager: { ...f.snapshot, prs: [pr()] }, other: f.snapshot };
   assert.equal(chooseWork(f.catalog, f.state, snapshots, f.config, now).task.id, 'OT-001');
 });
 test('priority then task ID determines selection', () => {
   const f = fixture(); f.catalog.tasks.push({ ...f.catalog.tasks[0], id: 'RM-002', priority: 200 });
-  f.config.projects.repomanager.allowedTasks.push('RM-002'); assert.equal(select(f).task.id, 'RM-002');
+  assert.equal(select(f).task.id, 'RM-002');
   f.catalog.tasks[1].priority = 100; assert.equal(select(f).task.id, 'RM-001');
 });
 test('unknown or invalid configuration limits fail closed', () => {
-  for (const change of [c => c.maxAttempts = 0, c => c.enabled = 'false', c => c.typo = true, c => c.requiredChecks = []]) {
+  for (const change of [c => c.maxAttempts = 0, c => c.enabled = 'false', c => c.typo = true, c => c.requiredChecks = [],
+    c => c.projects.repomanager.allowedTasks = ['RM-001']]) {
     const f = fixture(); change(f.config); assert.throws(() => validateConfig(f.config));
   }
 });
@@ -207,6 +208,10 @@ test('worker refuses a claim exceeding its own correction limit', () => {
 test('manual worker gate rejects unauthorized task and claimed worker validates attempt', () => {
   const f = fixture(); const input = { ...f, taskId: 'RM-001', taskPath: f.catalog.tasks[0].relativePath, repository: 'Owner/Repo', mode: 'implementation' };
   assert.equal(authorize(input).task.id, 'RM-001');
+  const enrolled = f.config.projects.repomanager;
+  delete f.config.projects.repomanager;
+  assert.throws(() => authorize(input));
+  f.config.projects.repomanager = enrolled;
   assert.throws(() => authorize({ ...input, taskPath: '../elsewhere' }));
   assert.throws(() => authorize({ ...input, mode: 'correction' }));
   f.catalog.tasks[0].status = 'in_progress'; f.state.executions = [record()];
