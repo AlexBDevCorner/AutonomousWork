@@ -1,8 +1,8 @@
 # Autonomous development status
 
-Automatic execution: paused.
+Automatic execution: enabled.
 
 | Project | Task | State | PR | Attempts / corrections | Last result |
 | --- | --- | --- | --- | --- | --- |
 | mandarinbotnet | none | not enrolled | | 0 / 0 | |
-| repomanager | none | idle | | 0 / 0 | |
+| repomanager | RM-003 | in_progress |  | 1 / 0 | pending |
