@@ -7,14 +7,18 @@
     "repomanager": {
       "branch": "master",
       "workflow": "autonomous-worker.yml",
-      "allowedTasks": ["RM-003"]
+      "allowedTasks": [
+        "RM-003"
+      ]
     }
   },
-  "maxAttempts": 3,
+  "maxAttempts": 20,
   "maxCorrectionRounds": 3,
-  "maxStartsPerProjectPerDay": 6,
+  "maxStartsPerProjectPerDay": 20,
   "dispatchGraceMinutes": 15,
   "maxRunMinutes": 60,
   "reviewers": [],
-  "requiredChecks": ["build-and-test"]
+  "requiredChecks": [
+    "build-and-test"
+  ]
 }
