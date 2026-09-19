@@ -5,7 +5,7 @@
       "taskId": "RM-003",
       "projectId": "repomanager",
       "repository": "AlexBDevCorner/RepoManager",
-      "status": "in_progress",
+      "status": "blocked",
       "attempts": [
         {
           "id": "5e64c277-8105-467d-9137-8236a52b1057",
@@ -26,7 +26,7 @@
           "dispatchStatus": "pending"
         }
       ],
-      "blockReason": null
+      "blockReason": "duplicate_workflow_runs"
     }
   ]
 }
