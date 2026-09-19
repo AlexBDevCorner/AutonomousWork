@@ -21,13 +21,13 @@ export function authorize({ catalog, state, config, taskId, taskPath, repository
       throw new Error('Missing, stale, disabled, or mismatched dispatcher claim.');
     return { task, project, execution, attempt };
   }
-  if (mode !== 'implementation' || task.status !== 'ready' || execution) throw new Error('Manual pilot requires an unclaimed ready task.');
+  if (mode !== 'implementation' || task.status !== 'ready' || execution) throw new Error('Manual dispatch requires an unclaimed ready task.');
   if (catalog.tasks.some(t => t.projectId === project.id && ['in_progress', 'review'].includes(t.status)))
     throw new Error('The project already has active work.');
   const next = catalog.tasks.filter(t => t.projectId === project.id && t.status === 'ready' &&
     t.dependsOn.every(id => catalog.tasks.find(d => d.id === id)?.status === 'done'))
     .sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id, 'en'))[0];
-  if (next?.id !== taskId) throw new Error('Manual pilot must match deterministic selection.');
+  if (next?.id !== taskId) throw new Error('Manual dispatch must match deterministic selection.');
   return { task, project };
 }
 
@@ -77,7 +77,7 @@ async function main() {
     const sameTitle = runTitle(input.taskId, input.attemptId || 'manual');
     const previous = runs.filter(r => r.id !== Number(process.env.GITHUB_RUN_ID) && r.display_title === sameTitle);
     if (input.attemptId && previous.length) throw new Error('This claim already has a workflow run.');
-    if (!input.attemptId && previous.length >= config.maxAttempts) throw new Error('Manual pilot attempt limit reached.');
+    if (!input.attemptId && previous.length >= config.maxAttempts) throw new Error('Manual dispatch attempt limit reached.');
     const today = new Date().toISOString().slice(0, 10);
     if (runs.filter(r => r.created_at.startsWith(today)).length > config.maxStartsPerProjectPerDay)
       throw new Error('Daily worker start limit reached.');
