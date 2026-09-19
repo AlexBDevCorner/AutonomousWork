@@ -7,7 +7,7 @@
     "repomanager": {
       "branch": "master",
       "workflow": "autonomous-worker.yml",
-      "allowedTasks": ["RM-001"]
+      "allowedTasks": ["RM-003"]
     }
   },
   "maxAttempts": 3,
