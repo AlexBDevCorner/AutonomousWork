@@ -1,7 +1,8 @@
 # Plan assessment and implementation
 
-Assessment date: 2026-09-12. Repository files, GitHub run/job logs and open PRs
-were checked. A local implementation is not evidence that a workflow is deployed.
+Assessment date: 2026-09-12. Status updated 2026-09-20 after the RM-003
+end-to-end lifecycle pilot. Repository files, GitHub run/job logs and PRs were
+checked. A local implementation is not evidence that a workflow is deployed.
 
 ## Incident
 
@@ -26,21 +27,21 @@ invokes `opencode github run` without an auto-approval input.
 | Plan stages | Already present at assessment | Work added / remaining checkpoint |
 | --- | --- | --- |
 | 1-5: control model, ownership, template, validation, selection | Implemented; 42 existing tests pass | Added validated JSON catalog for orchestration; retained .NET as planning authority |
-| 6: cross-repository App authentication | App-token test workflow exists | No runs of that test were returned. App installation, secret availability and additional write/check permissions need a successful test |
-| 7-10: OpenCode pilot, worker, PR metadata, concurrency | Implemented but pilot stalled; no open RepoManager PR | Fixed approval wait; added claim, pause, attempt and exact-PR gates. Target workflow must be merged after control code |
-| 11: dispatcher | Absent | Manual dry-run/apply workflow; durable claim before dispatch; project allowlist; current target checks; no schedule enabled |
+| 6: cross-repository App authentication | App-token test workflow exists | Verified live during RM-003 after granting/approving the required App installation permissions |
+| 7-10: OpenCode pilot, worker, PR metadata, concurrency | Implemented | RM-001 proved the manual worker; RM-003 proved claimed worker execution, PR metadata, CI and verification |
+| 11: dispatcher | Implemented | Manual dry-run/apply workflow; durable claim before dispatch; enrolled projects; `ready` is the sole task authorization status; no schedule enabled yet |
 | 12: reconciliation | Absent | Run correlation by task plus attempt UUID; PR/run/merge observations; status-only task edits; separate execution JSON; atomic state commit |
 | 13: review protocol | Absent | Finished protocol and hourly reviewer prompt in reviewer/CHATGPT_REVIEW.md |
 | 14: normal ChatGPT scheduled reviewer | Not configured by this work | Requires the normal ChatGPT scheduler and a verified identity that can submit GitHub reviews. No claim that a read connector can approve PRs |
 | 15: review feedback | Trusted `/oc` comments existed | Replaced unrestricted comment execution with deterministic workflow dispatch tied to a trusted review ID and current head SHA |
-| 16: runaway protection | Trusted-comment author filter only | Three correction rounds, three manual pilot attempts, three project starts/day, timeouts, duplicate-claim/run detection; no automatic resend of uncertain dispatches |
+| 16: runaway protection | Implemented | Three correction rounds, five implementation attempts, eight project starts/day, timeouts, duplicate-claim/run detection; no automatic resend of uncertain dispatches |
 | 17: failure handling | Workflow failure only | Recorded run URL/conclusion, missing PR, closed PR, merge conflict, missing dispatch and timeout reasons; transient HTTP reads retry. Worker failure recovery remains an explicit operator decision |
 | 18: CI gate | No target CI workflow | Added Windows restore/build/full-test PR workflow. Making build-and-test and a review required on master still requires repository protection configuration |
-| 19: complete pilot | Not completed | Local deterministic negative-path tests and real read-only API preview are possible now. Live implementation/review/correction/merge cycle still needs the preceding deployment and reviewer checkpoints |
-| 20: second project | Definition exists, enabled in project.yaml | Dispatcher allowlist excludes MandarinBotNet until RepoManager's complete pilot succeeds |
+| 19: complete pilot | Completed for the approval path | RM-003 ran `ready → in_progress → review → approved → merged → done`; the separate CHANGES_REQUESTED/correction branch still needs a dedicated live fixture |
+| 20: second project | Definition exists, enabled in project.yaml | Not enrolled in `automation/config.json`; onboard only after scheduled dispatch/review and correction flow are proven |
 | 21: operator status | Absent | Markdown status, Actions summary and review queue artifact |
 | 22: cost limits | Absent | Attempt timestamps, run IDs, outcomes, correction counts and daily start budget; no claim of exact token/Go quota accounting |
-| 23: pause controls | Per-project enabled flag | Added global execution switch and enrolled-task allowlist; worker rechecks current switches after waiting in the queue |
+| 23: pause controls | Implemented | Global execution switch plus project enrollment/project enabled flag; a Human may de-authorize unclaimed work by changing `ready` back to `draft`; worker rechecks current controls after queueing |
 | 24: automatic merging | Absent | Deliberately deferred. Human merge remains the completion boundary |
 
 ## Changes to the proposed design
@@ -60,19 +61,14 @@ invokes `opencode github run` without an auto-approval input.
   is not a useful recovery policy. Reads retry transient server failures;
   non-idempotent writes do not.
 
-## Planning conflict that requires an owner decision
+## Planning conflict resolution
 
-RM-002 requests new task documents in this control repository from a RepoManager
-worker. That conflicts with the worker's read-only control checkout and the
-human ownership of planning. Its specification was left unchanged. The dispatcher
-allows only RM-001, so completing the pilot cannot accidentally start RM-002.
-Rewrite RM-002 as a target-repository proposal document for human acceptance, or
-handle backlog authoring as a separate planning activity before expanding the allowlist.
-
-RM-001 itself explicitly tests the manual worker and excludes lifecycle changes.
-The new claimed-worker path is implemented separately. Do not claim the manual
-RM-001 run proves the full lifecycle; authorize a suitable end-to-end pilot task
-before testing all of stage 19.
+RM-002 was handled as control-repository planning rather than by the target
+RepoManager worker, preserving the worker's read-only control checkout and human
+ownership of planning. It produced RM-003 as the authorized implementation task.
+RM-003 then completed the live claimed-worker approval/merge lifecycle, so no
+per-task automation allowlist is retained. Future task-level authorization is
+only the Human transition from `draft` to `ready`.
 
 ## Verification performed
 
@@ -82,8 +78,9 @@ before testing all of stage 19.
 - RepoManager full Release test suite: 358 passed, comprising 104 Core, 142 App
   and 112 integration tests.
 - actionlint 1.7.12 accepted both changed control workflows and both target workflows.
-- Real GitHub preview returned `applied: false`, `executionEnabled: false`, no
-  selected work and no pending reviews. No model run or repository write occurred.
+- The RM-003 dry run selected the expected task without writes; the applied run
+  dispatched OpenCode, produced RepoManager PR #22, passed CI, received a trusted
+  approval, merged, and reconciled to `done` with merge SHA/timestamp recorded.
 - Local .NET restore reported NU1900 because the inherited StandardsDigital
   package feed could not provide vulnerability data. Builds and tests succeeded;
   this does not establish a clean vulnerability audit.
