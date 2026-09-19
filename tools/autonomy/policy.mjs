@@ -13,12 +13,11 @@ export function validateConfig(config) {
   for (const k of ['reviewers', 'requiredChecks'])
     if (!Array.isArray(config[k]) || config[k].some(v => typeof v !== 'string' || !v.trim())) throw new Error(`Invalid ${k}`);
   if (!config.requiredChecks.length) throw new Error('At least one required CI check is needed.');
-  if (!config.projects || Array.isArray(config.projects)) throw new Error('Invalid projects allowlist.');
+  if (!config.projects || Array.isArray(config.projects)) throw new Error('Invalid projects configuration.');
   for (const [id, project] of Object.entries(config.projects)) {
-    if (!/^[a-z0-9-]+$/.test(id) || Object.keys(project).some(k => !['branch', 'workflow', 'allowedTasks'].includes(k)) ||
-        !/^[\w./-]+$/.test(project.branch) || !/^[\w.-]+\.ya?ml$/.test(project.workflow) ||
-        !Array.isArray(project.allowedTasks) || !project.allowedTasks.length ||
-        project.allowedTasks.some(t => !/^[A-Z]+-\d+$/.test(t))) throw new Error(`Invalid project allowlist: ${id}`);
+    if (!/^[a-z0-9-]+$/.test(id) || Object.keys(project).some(k => !['branch', 'workflow'].includes(k)) ||
+        !/^[\w./-]+$/.test(project.branch) || !/^[\w.-]+\.ya?ml$/.test(project.workflow))
+      throw new Error(`Invalid project configuration: ${id}`);
   }
 }
 
@@ -104,7 +103,7 @@ export function chooseWork(catalog, state, snapshots, config, now) {
       if (open.length !== 1) continue;
       const pr = open[0];
       const record = records.find(e => e.pr === pr.number && e.status === 'review');
-      if (!record || !target.allowedTasks.includes(record.taskId) || byId.get(record.taskId)?.status !== 'review') continue;
+      if (!record || byId.get(record.taskId)?.status !== 'review') continue;
       const review = latestReview(pr, snapshot.reviews[pr.number] ?? [], config.reviewers);
       if (review?.state !== 'CHANGES_REQUESTED' || record.attempts.some(a => a.reviewId === review.id)) continue;
       if (record.attempts.filter(a => a.kind === 'correction').length >= config.maxCorrectionRounds) continue;
@@ -116,7 +115,7 @@ export function chooseWork(catalog, state, snapshots, config, now) {
     if (records.some(e => ['in_progress', 'review', 'blocked'].includes(e.status)) ||
         catalog.tasks.some(t => t.projectId === project.id && ['in_progress', 'review'].includes(t.status))) continue;
     for (const task of catalog.tasks.filter(t => t.projectId === project.id && t.status === 'ready')) {
-      if (!target.allowedTasks.includes(task.id) || records.some(e => e.taskId === task.id) ||
+      if (records.some(e => e.taskId === task.id) ||
           !task.dependsOn.every(id => byId.get(id)?.status === 'done')) continue;
       // Closed historical PRs must be reconciled by an operator, never reopened automatically.
       if (snapshot.prs.some(pr => pr.head.ref === `autonomous/${task.id}`)) continue;
