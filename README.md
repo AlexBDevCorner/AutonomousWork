@@ -6,8 +6,9 @@ projects, tasks, priorities, and execution state in a machine-readable way.
 Target repos are never described inline — each project maps to exactly one
 target GitHub repository (see `projects/<project-id>/project.yaml`).
 
-The dispatcher, reconciler and bounded worker contract are now implemented with
-automatic execution paused. See [the plan assessment](docs/autonomy-assessment.md),
+The dispatcher, reconciler and bounded worker contract are implemented, and the
+RM-003 end-to-end lifecycle pilot has completed successfully. See
+[the plan assessment](docs/autonomy-assessment.md),
 [deployment and operations](docs/autonomy-operations.md), and
 [the reviewer protocol](reviewer/CHATGPT_REVIEW.md). These distinguish tested
 code from the remaining live pilot and account-configuration checkpoints.
@@ -122,7 +123,7 @@ Rules:
 
 ### Ownership & authorization
 
-Five roles. Each role has an allow-list; everything else is forbidden.
+Five roles. Each role has an explicit set of allowed actions; everything else is forbidden.
 Agents must never "helpfully" act outside their role, even if blocked.
 
 - **Human** — owns intent and authorization:
@@ -355,8 +356,9 @@ see it.
 1. Create `projects/<project-id>/project.yaml` (see `schema/project.schema.json`).
 2. Create `projects/<project-id>/tasks/` with at least one `*-001.md` task.
 3. Verify: unique IDs, valid `repository`, valid front matter.
-4. Commit and push. Enroll the project and explicitly allowed pilot tasks in
-   `automation/config.json` only after its worker, authentication and CI are verified.
+4. Commit and push. Enroll the project in `automation/config.json` only after
+   its worker, authentication and CI are verified. Individual tasks are authorized
+   solely by the Human changing `status: draft` to `status: ready`.
 
 ## Adding a new task
 
