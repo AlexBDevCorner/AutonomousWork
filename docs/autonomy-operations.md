@@ -1,4 +1,4 @@
-# Operating the pilot
+# Operating autonomous development
 
 ## Deployment order
 
@@ -27,21 +27,23 @@
    `CONTROL_REPO_TOKEN` and the worker App token serve different purposes
    and must remain separate.
    Provisioning required in the target repository: `vars.AUTONOMOUS_APP_CLIENT_ID`
-   plus `secrets.AUTONOMOUS_APP_PRIVATE_KEY`, with the App installation on
-   RepoManager granting Contents, Pull requests, and Issues write. If the
-   installation currently grants less, update the App permissions and reinstall
-   before running the worker; token minting fails closed otherwise.
+   plus `secrets.AUTONOMOUS_APP_PRIVATE_KEY`. The GitHub App registration and
+   the RepoManager installation must both grant Contents, Pull requests, and
+   Issues read/write; changing the App registration alone is not enough until the
+   installation approves the updated permissions. Token minting fails closed if
+   the workflow requests permissions the installation has not granted.
    Replacing the target read PAT with an installation token requires provisioning
    the App credentials in the target or an approved cross-repository token flow.
 5. Run the manual RM-001 pilot. The global automatic switch can stay off. It must
    create one valid PR and pass CI. Review and merge remain manual.
-6. Resolve the RM-002 conflict and authorize a lifecycle pilot task. Add only its
-   ID to the allowlist. Configure the designated reviewer identity and prove it
-   can submit reviews. Test the blocked-review path using an actual bounded
-   fixture, never an invented finding against good code.
-7. Set `automation/config.json.enabled` to true after those checks. Run dispatcher
-   preview, inspect its selected task, then run apply. Add a 15-30 minute schedule
-   only after the full implementation/review/correction/merge lifecycle works.
+6. The RM-003 lifecycle pilot proved implementation, CI, review, merge, and final
+   reconciliation. Task-level authorization is now exclusively the task status:
+   a Human promotes `draft` to `ready`; there is no separate per-task allowlist.
+   Project enrollment in `automation/config.json` and project/global enable
+   switches remain independent safety boundaries.
+7. Keep `automation/config.json.enabled` true only while autonomous execution is
+   intended. Before enabling a schedule, prove the blocked-review/correction path
+   using an actual bounded fixture, never an invented finding against good code.
 
 ## Local checks
 
@@ -94,8 +96,10 @@ head past the reviewed SHA fails verification and reconciles to
 `correction_did_not_advance_head` instead of returning to review, so a consumed
 review ID can never deadlock the task. Closing an unmerged PR blocks the task;
 automation does not reopen it. A merge can still reconcile a blocked task to done.
-Manual pilot attempts are bounded by `maxAttempts` (three permits three manual
-model executions).
+`maxAttempts` bounds implementation attempts per task and
+`maxStartsPerProjectPerDay` bounds worker starts per project/day. They are
+runaway/cost safety brakes, not task authorization. Current defaults are 5
+implementation attempts and 8 starts per project/day.
 
 For recovery, inspect the recorded run and PR first. Reconcile the task status
 and corresponding execution record together in a reviewed operator commit.
@@ -106,10 +110,16 @@ the same GitHub run or dispatching the same claim a second time.
 ## Stop controls
 
 Set `automation/config.json.enabled` to false to stop new automatic work and
-corrections. Set a project's `enabled: false` to pause it, or remove an unstarted
-task from its allowlist. Current worker guards also re-read these controls after
-queueing. Already running model sessions must be cancelled in GitHub Actions;
-a pause does not kill processes already past the guard.
+corrections. Set a project's `enabled: false` to pause that project. Before a
+task is claimed, a Human may also de-authorize it by changing `ready` back to
+`draft`. Current worker guards re-read the global/project controls and the
+pinned task specification after queueing. Already running model sessions must be
+cancelled in GitHub Actions; a pause does not kill processes already past the guard.
+
+The RepoManager worker uses `opencode-go/muse-spark-1.3-contributor` with
+`variant: xhigh` by default. Its OpenCode GitHub Action is pinned to commit
+`83abc64a5c4e0e0a5157f2c4435d34131009a404`; update that pin deliberately
+after reviewing upstream changes rather than following `@latest`.
 
 Scheduled dispatch and the normal ChatGPT reviewer are not enabled by this
-change. No automatic merge path exists.
+change. No automatic merge path exists yet.
