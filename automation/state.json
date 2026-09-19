@@ -5,7 +5,7 @@
       "taskId": "RM-003",
       "projectId": "repomanager",
       "repository": "AlexBDevCorner/RepoManager",
-      "status": "blocked",
+      "status": "in_progress",
       "attempts": [
         {
           "id": "5e64c277-8105-467d-9137-8236a52b1057",
@@ -24,9 +24,16 @@
           "startedAt": "2026-09-19T18:29:02.603Z",
           "sourceControlSha": "b5a7803d3bdb567d272999acd6f32d386bb2739e",
           "dispatchStatus": "pending"
+        },
+        {
+          "id": "6e8a1408-5c44-43b4-9d7c-65dcca7e947a",
+          "kind": "implementation",
+          "startedAt": "2026-09-19T20:21:24.024Z",
+          "sourceControlSha": "0282053948489aef1c103add7d03fea4b665f40d",
+          "dispatchStatus": "pending"
         }
       ],
-      "blockReason": "duplicate_workflow_runs"
+      "blockReason": null
     }
   ]
 }
