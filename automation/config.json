@@ -17,7 +17,9 @@
   "maxStartsPerProjectPerDay": 20,
   "dispatchGraceMinutes": 15,
   "maxRunMinutes": 60,
-  "reviewers": [],
+  "reviewers": [
+    "AlexBDevCorner"
+  ],
   "requiredChecks": [
     "build-and-test"
   ]
