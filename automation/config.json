@@ -6,15 +6,12 @@
   "projects": {
     "repomanager": {
       "branch": "master",
-      "workflow": "autonomous-worker.yml",
-      "allowedTasks": [
-        "RM-003"
-      ]
+      "workflow": "autonomous-worker.yml"
     }
   },
-  "maxAttempts": 20,
+  "maxAttempts": 5,
   "maxCorrectionRounds": 3,
-  "maxStartsPerProjectPerDay": 20,
+  "maxStartsPerProjectPerDay": 8,
   "dispatchGraceMinutes": 15,
   "maxRunMinutes": 60,
   "reviewers": [
