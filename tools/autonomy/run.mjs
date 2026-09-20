@@ -16,15 +16,29 @@ export function load(root) {
 
 async function main() {
   const args = process.argv.slice(2);
-  if (args.some(a => !['--apply', '--validate'].includes(a))) throw new Error('Usage: node tools/autonomy/run.mjs [--apply | --validate]');
+  let retryTaskId = null;
+  const flags = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--retry') {
+      if (retryTaskId || !args[i + 1] || !/^[A-Z][A-Z0-9]*-[0-9]+$/.test(args[i + 1]))
+        throw new Error('Usage: node tools/autonomy/run.mjs [--apply | --validate] [--retry TASK-ID]');
+      retryTaskId = args[++i];
+    } else {
+      flags.push(args[i]);
+    }
+  }
+  if (flags.some(a => !['--apply', '--validate'].includes(a)) ||
+      (retryTaskId && (!flags.includes('--apply') || flags.includes('--validate'))))
+    throw new Error('Usage: node tools/autonomy/run.mjs [--apply | --validate] [--retry TASK-ID]');
   const root = process.cwd(), { config, state, catalog } = load(root);
-  if (args.includes('--validate')) { console.log('Automation configuration and state valid.'); return; }
-  if (args.includes('--apply') && execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim())
+  if (flags.includes('--validate')) { console.log('Automation configuration and state valid.'); return; }
+  if (flags.includes('--apply') && execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim())
     throw new Error('Apply requires a clean checkout; commit/review planning changes first.');
   const sourceSha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
   const taskTexts = Object.fromEntries(catalog.tasks.map(t => [t.relativePath, readFileSync(resolve(root, t.relativePath), 'utf8')]));
   const api = new GitHub(process.env.GH_TOKEN);
-  const result = await coordinate({ config, state, catalog, sourceSha, taskTexts, api, apply: args.includes('--apply') });
+  const result = await coordinate({ config, state, catalog, sourceSha, taskTexts, api,
+    apply: flags.includes('--apply'), retryTaskId });
   writeFileSync('automation/STATUS.md', result.summary);
   writeFileSync('automation/review-queue.json', JSON.stringify(result.reviewQueue, null, 2) + '\n');
   console.log(JSON.stringify({ applied: result.applied, executionEnabled: config.enabled, selected: result.selected,
