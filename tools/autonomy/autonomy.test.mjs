@@ -162,7 +162,9 @@ test('unrelated success cannot reconcile a claim and duplicate correlated runs b
   f.snapshot.runs = [completed(), completed({ id: 9 })]; assert.equal(reconcile(record(), f.snapshot, f.config, now).status, 'blocked');
 });
 test('worker exceeding wall clock cap is blocked', () => {
-  const f = fixture(); f.snapshot.runs = [completed({ status: 'in_progress', run_started_at: new Date(now - 61 * 60000).toISOString() })];
+  const f = fixture();
+  f.snapshot.runs = [completed({ status: 'in_progress',
+    run_started_at: new Date(now - (f.config.maxRunMinutes + 1) * 60000).toISOString() })];
   assert.equal(reconcile(record(), f.snapshot, f.config, now).blockReason, 'worker_time_limit_exceeded');
 });
 test('dry run performs no commits or dispatches', async () => {
