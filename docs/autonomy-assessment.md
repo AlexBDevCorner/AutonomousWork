@@ -31,8 +31,8 @@ invokes `opencode github run` without an auto-approval input.
 | 7-10: OpenCode pilot, worker, PR metadata, concurrency | Implemented | RM-001 proved the manual worker; RM-003 proved claimed worker execution, PR metadata, CI and verification |
 | 11: dispatcher | Implemented | Durable claim before dispatch; enrolled projects; `ready` is the sole task authorization status; scheduled every 30 minutes and always applies |
 | 12: reconciliation | Absent | Run correlation by task plus attempt UUID; PR/run/merge observations; status-only task edits; separate execution JSON; atomic state commit |
-| 13: review protocol | Absent | Finished protocol and hourly reviewer prompt in reviewer/CHATGPT_REVIEW.md |
-| 14: normal ChatGPT scheduled reviewer | Not configured by this work | Requires the normal ChatGPT scheduler and a verified identity that can submit GitHub reviews. No claim that a read connector can approve PRs |
+| 13: review protocol | Implemented | reviewer/CHATGPT_REVIEW.md now defines exact-head review plus guarded merge |
+| 14: normal ChatGPT scheduled reviewer | Configured | Hourly ChatGPT automation re-reads the protocol and can submit trusted reviews with GitHub write access |
 | 15: review feedback | Trusted `/oc` comments existed | Replaced unrestricted comment execution with deterministic workflow dispatch tied to a trusted review ID and current head SHA |
 | 16: runaway protection | Implemented | Three correction rounds, five implementation attempts, eight project starts/day, timeouts, duplicate-claim/run detection; no automatic resend of uncertain dispatches |
 | 17: failure handling | Workflow failure only | Recorded run URL/conclusion, missing PR, closed PR, merge conflict, missing dispatch and timeout reasons; transient HTTP reads retry. Worker failure recovery remains an explicit operator decision |
@@ -42,12 +42,13 @@ invokes `opencode github run` without an auto-approval input.
 | 21: operator status | Absent | Markdown status, Actions summary and review queue artifact |
 | 22: cost limits | Absent | Attempt timestamps, run IDs, outcomes, correction counts and daily start budget; no claim of exact token/Go quota accounting |
 | 23: pause controls | Implemented | Global execution switch plus project enrollment/project enabled flag; a Human may de-authorize unclaimed work by changing `ready` back to `draft`; worker rechecks current controls after queueing |
-| 24: automatic merging | Absent | Deliberately deferred. Human merge remains the completion boundary |
+| 24: automatic merging | Configured | ChatGPT may merge only a trusted-approved exact head after fresh CI/mapping/mergeability checks using expected_head_sha; reconciler still owns done |
 
 ## Changes to the proposed design
 
-- A review approval is not task completion. Only an observed merge produces
-  `done`, merge SHA and completion timestamp.
+- A review approval is not task completion. ChatGPT may perform a guarded merge
+  after approval, but only an observed merge produces `done`, merge SHA and
+  completion timestamp through the reconciler.
 - Keep execution records in `automation/state.json`; mutate only the task's
   front-matter status. Requirements, priority, dependencies and Markdown body
   retain their bytes. All state files change in one Git tree/commit with a
