@@ -146,12 +146,14 @@ Agents must never "helpfully" act outside their role, even if blocked.
   - Never selects future tasks; never starts unclaimed work; never edits
     task requirements, `priority`, or other tasks.
 
-- **ChatGPT** — reviews PRs:
+- **ChatGPT** — reviews and guarded-merges autonomous PRs:
   - Reviews PRs against task acceptance criteria.
-  - Requests changes or approves.
-  - Never implements code; never commits to target repos.
+  - Requests changes or approves against the exact current head SHA.
+  - After a trusted approval, may merge only when the reviewer protocol's
+    current-head, CI, mapping, mergeability, and expected-head guards all pass.
+  - Never implements code or edits target-repository code directly.
   - Never changes requirements (no edits to task files, no `priority` /
-    `depends_on` / body changes).
+    `depends_on` / body changes) and never marks tasks `done`.
 
 - **Reconciler** — syncs execution state:
   - Updates execution metadata/status (`in_progress` → `review` →
@@ -186,6 +188,7 @@ Authorization boundary:
 | Claim `ready` → `in_progress` | ❌ | ✅ | ❌ | ❌ | ❌ |
 | Implement task / open PR | ❌ | ❌ | ✅ (one claimed task) | ❌ | ❌ |
 | Review PR (approve / request changes) | ✅ | ❌ | ❌ | ✅ | ❌ |
+| Merge approved autonomous PR under guarded protocol | ✅ | ❌ | ❌ | ✅ | ❌ |
 | Update status `in_progress`/`review`/`blocked`/`done` | ✅ | ❌ | ❌ | ❌ | ✅ |
 
 ### Execution contract (for workers)
@@ -219,10 +222,12 @@ blocked project can never starve the others.
    [OpenCode] then implements exactly that one claimed task and
    creates/updates the PR in the target repository.
 6. [Reconciler] After a successful worker and observed PR, set `status: review`,
-   or `blocked` with a reason in the execution ledger. [ChatGPT] reviews the PR.
-   Approval does not complete the task: [Reconciler] sets `done` only after an
-   observed merge, recording its SHA and timestamp. Human status overrides must
-   reconcile the matching execution record in the same operator change.
+   or `blocked` with a reason in the execution ledger. [ChatGPT] reviews the PR
+   and may guarded-merge an approved exact head according to
+   `reviewer/CHATGPT_REVIEW.md`. Approval alone does not complete the task:
+   [Reconciler] sets `done` only after an observed merge, recording its SHA and
+   timestamp. Human status overrides must reconcile the matching execution record
+   in the same operator change.
 
 ### Autonomous worker pilot (RepoManager — steps 8–10)
 
