@@ -121,5 +121,21 @@ The RepoManager worker uses `opencode-go/muse-spark-1.3-contributor` with
 `83abc64a5c4e0e0a5157f2c4435d34131009a404`; update that pin deliberately
 after reviewing upstream changes rather than following `@latest`.
 
-Scheduled dispatcher/reconciliation is enabled every 30 minutes. The normal
-ChatGPT reviewer is not scheduled yet, and no automatic merge path exists yet.
+Scheduled dispatcher/reconciliation is enabled every 30 minutes. A normal
+ChatGPT scheduled task runs hourly and follows `reviewer/CHATGPT_REVIEW.md` to
+review eligible autonomous PR heads and guarded-merge trusted approved heads.
+The merge uses GitHub's exact `expected_head_sha` guard; the reconciler remains
+the only component that marks a task `done` after observing the merge.
+
+## Scheduled ChatGPT reviewer and merger
+
+The hourly ChatGPT automation is intentionally separate from GitHub Actions. On
+each run it re-reads `reviewer/CHATGPT_REVIEW.md` from master and treats that
+file as the authoritative protocol. It may submit APPROVE or REQUEST_CHANGES and
+may merge only an already trusted-approved exact head after re-validating all
+current mapping, CI, review, mergeability, and SHA guards.
+
+A successful approval is not sufficient by itself: the merge operation must use
+`expected_head_sha` equal to the reviewed head. If anything changes between
+review and merge, the merge fails closed and a later run re-evaluates the new
+state. ChatGPT never edits planning state or marks a task complete.
