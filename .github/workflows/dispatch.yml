@@ -1,6 +1,12 @@
 name: Autonomous dispatcher and reconciler
 on:
   workflow_dispatch:
+    inputs:
+      retry_task:
+        description: "Blocked task ID to retry; leave empty for normal dispatch"
+        required: false
+        default: ''
+        type: string
   push:
     branches:
       - master
@@ -48,8 +54,14 @@ jobs:
       - name: Reconcile and select work
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          RETRY_TASK: ${{ inputs.retry_task }}
         shell: bash
-        run: node tools/autonomy/run.mjs --apply
+        run: |
+          if [ -n "$RETRY_TASK" ]; then
+            node tools/autonomy/run.mjs --apply --retry "$RETRY_TASK"
+          else
+            node tools/autonomy/run.mjs --apply
+          fi
       - name: Publish operator summary
         if: always()
         shell: bash
