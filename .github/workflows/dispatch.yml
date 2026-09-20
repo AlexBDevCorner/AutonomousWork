@@ -2,7 +2,7 @@ name: Autonomous dispatcher and reconciler
 on:
   workflow_dispatch:
   schedule:
-    - cron: '7,37 * * * *'
+    - cron: '3,13,23,33,43,53 * * * *'
 
 concurrency:
   group: autonomous-control
