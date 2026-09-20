@@ -1,8 +1,11 @@
 name: Autonomous dispatcher and reconciler
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '3,13,23,33,43,53 * * * *'
+  push:
+    branches:
+      - master
+    paths:
+      - automation/dispatcher-heartbeat.txt
 
 concurrency:
   group: autonomous-control
