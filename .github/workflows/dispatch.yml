@@ -1,17 +1,16 @@
 name: Autonomous dispatcher and reconciler
 on:
   workflow_dispatch:
-    inputs:
-      apply:
-        description: "Persist reconciliation and dispatch eligible work (config must also enable execution)"
-        type: boolean
-        default: false
-  # Add a schedule only after the controlled pilot and App permission check pass.
+  schedule:
+    - cron: '7,37 * * * *'
+
 concurrency:
   group: autonomous-control
   cancel-in-progress: false
+
 permissions:
   contents: read
+
 jobs:
   control:
     if: github.ref == 'refs/heads/master'
@@ -39,21 +38,15 @@ jobs:
           repositories: |
             AutonomousWork
             RepoManager
-          permission-contents: ${{ inputs.apply && 'write' || 'read' }}
-          permission-actions: ${{ inputs.apply && 'write' || 'read' }}
+          permission-contents: write
+          permission-actions: write
           permission-pull-requests: read
           permission-checks: read
       - name: Reconcile and select work
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          APPLY: ${{ inputs.apply }}
         shell: bash
-        run: |
-          if [ "$APPLY" = "true" ]; then
-            node tools/autonomy/run.mjs --apply
-          else
-            node tools/autonomy/run.mjs
-          fi
+        run: node tools/autonomy/run.mjs --apply
       - name: Publish operator summary
         if: always()
         shell: bash
