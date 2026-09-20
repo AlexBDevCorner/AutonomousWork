@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { chooseWork, reconcile, latestAttempt, latestReview, ciGreen, replaceStatus, summary, validateConfig } from './policy.mjs';
+import { chooseWork, chooseRetry, reconcile, latestAttempt, latestReview, ciGreen, replaceStatus, summary, validateConfig } from './policy.mjs';
 
 export function validateState(catalog, state, config) {
   validateConfig(config);
@@ -29,7 +29,7 @@ export function validateState(catalog, state, config) {
 
 // All side effects are injected. This makes dispatch ordering, races, and ambiguous failures testable.
 export async function coordinate({ catalog, state: initial, config, sourceSha, taskTexts, api, apply = false,
-  now = Date.now(), newId = randomUUID }) {
+  retryTaskId = null, now = Date.now(), newId = randomUUID }) {
   validateState(catalog, initial, config);
   const state = structuredClone(initial), model = structuredClone(catalog), texts = { ...taskTexts };
   let parent = sourceSha;
@@ -64,7 +64,11 @@ export async function coordinate({ catalog, state: initial, config, sourceSha, t
     state.executions[i] = next;
     status(next, next.status);
   }
-  const selected = chooseWork(model, state, snapshots, config, now);
+  const selected = retryTaskId
+    ? chooseRetry(retryTaskId, model, state, snapshots, config, now)
+    : chooseWork(model, state, snapshots, config, now);
+  if (retryTaskId && !selected)
+    throw new Error(`Blocked task ${retryTaskId} is not eligible for a bounded implementation retry.`);
   async function save(message) {
     const files = { ...changes, 'automation/state.json': JSON.stringify(state, null, 2) + '\n',
       'automation/STATUS.md': summary(model, state, config) };
@@ -74,7 +78,9 @@ export async function coordinate({ catalog, state: initial, config, sourceSha, t
   if (selected && apply) {
     // Re-observe the target immediately before claiming. Worker repeats the guard after queueing.
     snapshots[selected.project.id] = await api.snapshot(selected.project.repository, config.projects[selected.project.id], state.executions.filter(e => e.projectId === selected.project.id));
-    const fresh = chooseWork(model, state, snapshots, config, now);
+    const fresh = retryTaskId
+      ? chooseRetry(retryTaskId, model, state, snapshots, config, now)
+      : chooseWork(model, state, snapshots, config, now);
     if (!fresh || fresh.task.id !== selected.task.id || fresh.headSha !== selected.headSha || fresh.reviewId !== selected.reviewId)
       throw new Error('Target changed during dispatch planning; no claim or dispatch made.');
     let execution = state.executions.find(e => e.taskId === selected.task.id);
@@ -92,7 +98,7 @@ export async function coordinate({ catalog, state: initial, config, sourceSha, t
     execution.blockReason = null;
     status(execution, 'in_progress');
     // Durable reservation BEFORE the non-idempotent network request. Failed CAS means zero dispatches.
-    await save(`Claim ${execution.taskId} (${attempt.id})`);
+    await save(`${selected.retry ? 'Retry' : 'Claim'} ${execution.taskId} (${attempt.id})`);
     const claimSha = parent;
     try {
       const receipt = await api.dispatch(execution.repository, config.projects[execution.projectId], {
