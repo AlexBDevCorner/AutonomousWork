@@ -106,6 +106,7 @@ async function main() {
   if (files.some(f => [f.filename, f.previous_filename].filter(Boolean).some(p => p.startsWith('.github/') || p.startsWith('control/'))))
     throw new Error('Worker changed protected workflow/control files.');
   if (pr.base.ref !== target.branch || !pr.title.startsWith(`[${input.taskId}]`) || pr.state !== 'open') throw new Error('Invalid PR title/base/state.');
+  if (pr.draft) throw new Error('Worker must leave the task PR ready for review, not draft.');
   for (const label of ['autonomous', 'autonomous:opencode', `task:${input.taskId}`])
     if (!pr.labels.some(l => l.name === label)) throw new Error(`Missing PR label: ${label}`);
   for (const heading of ['Task', 'Control specification', 'Implementation', 'Verification', 'Autonomous execution'])
