@@ -100,11 +100,29 @@ automation does not reopen it. A merge can still reconcile a blocked task to don
 runaway/cost safety brakes, not task authorization. Current defaults are 5
 implementation attempts and 8 starts per project/day.
 
-For recovery, inspect the recorded run and PR first. Reconcile the task status
-and corresponding execution record together in a reviewed operator commit.
-Keep historical attempts; do not delete the ledger to reset counters. Automatic
-retry of blocked executions is not implemented. The worker refuses re-running
-the same GitHub run or dispatching the same claim a second time.
+For recovery, inspect the recorded run and PR first. Keep historical attempts;
+never delete the ledger to reset counters. A blocked implementation whose latest
+observed worker run ended in `failure`, `cancelled`, or `timed_out` can be
+retried only by an explicit operator request:
+
+```sh
+node tools/autonomy/run.mjs --apply --retry RM-004
+```
+
+In GitHub Actions, run **Autonomous dispatcher and reconciler** manually and set
+the optional **retry_task** input to the blocked task ID. The retry path fails
+closed unless the task and execution are both blocked, the failure is an observed
+completed worker run, the implementation-attempt and daily-start caps still
+permit another attempt, the project/global switches are enabled, dependencies
+remain done, no target worker is active, and there is no conflicting autonomous
+PR. A partial open PR for the same task is allowed and is reused by the worker.
+
+A retry appends a new implementation attempt with a new UUID, changes
+`blocked -> in_progress`, durably commits that claim before dispatch, and
+preserves every previous attempt. It never re-runs the old GitHub workflow run
+or reuses its claim. Non-worker blocks such as merge conflicts, closed PRs,
+uncertain dispatches, and exhausted limits still require separate operator
+resolution.
 
 ## Stop controls
 
