@@ -13,7 +13,7 @@
   "maxCorrectionRounds": 3,
   "maxStartsPerProjectPerDay": 8,
   "dispatchGraceMinutes": 15,
-  "maxRunMinutes": 60,
+  "maxRunMinutes": 120,
   "reviewers": [
     "AlexBDevCorner"
   ],
