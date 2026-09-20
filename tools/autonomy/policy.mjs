@@ -125,6 +125,50 @@ export function chooseWork(catalog, state, snapshots, config, now) {
   return candidates.sort((a, b) => b.task.priority - a.task.priority || a.task.id.localeCompare(b.task.id, 'en'))[0] ?? null;
 }
 
+const retryableWorkerFailures = new Map([
+  ['worker_failure', 'failure'],
+  ['worker_cancelled', 'cancelled'],
+  ['worker_timed_out', 'timed_out'],
+]);
+
+export function chooseRetry(taskId, catalog, state, snapshots, config, now) {
+  if (!config.enabled) return null;
+  const task = catalog.tasks.find(t => t.id === taskId);
+  const project = catalog.projects.find(p => p.id === task?.projectId);
+  const execution = state.executions.find(e => e.taskId === taskId);
+  if (!task || !project || !project.enabled || !config.projects[project.id] ||
+      task.status !== 'blocked' || execution?.status !== 'blocked' ||
+      execution.projectId !== project.id || execution.repository !== project.repository ||
+      !task.dependsOn.every(id => catalog.tasks.find(t => t.id === id)?.status === 'done'))
+    return null;
+
+  const expectedConclusion = retryableWorkerFailures.get(execution.blockReason);
+  const attempt = execution.attempts.at(-1);
+  if (!expectedConclusion || attempt?.kind !== 'implementation' ||
+      attempt.conclusion !== expectedConclusion || !attempt.runId || !attempt.completedAt ||
+      execution.attempts.filter(a => a.kind === 'implementation').length >= config.maxAttempts)
+    return null;
+
+  const snapshot = snapshots[project.id];
+  if (!snapshot || snapshot.runs.some(activeRun)) return null;
+  const starts = state.executions.filter(e => e.projectId === project.id).flatMap(e => e.attempts)
+    .filter(a => a.startedAt.slice(0, 10) === new Date(now).toISOString().slice(0, 10));
+  if (starts.length >= config.maxStartsPerProjectPerDay) return null;
+
+  const taskPrs = snapshot.prs.filter(pr => pr.head.ref === `autonomous/${taskId}` &&
+    pr.head.repo?.full_name === project.repository);
+  if (taskPrs.length > 1) return null;
+  const taskPr = taskPrs[0];
+  if (taskPr && (taskPr.state !== 'open' || taskPr.base.ref !== config.projects[project.id].branch ||
+      taskPr.mergeable === false)) return null;
+
+  const otherOpen = snapshot.prs.filter(pr => pr.state === 'open' && autonomousPr(pr) && pr !== taskPr);
+  if (otherOpen.length) return null;
+
+  return { project, task, kind: 'implementation', retry: true,
+    ...(taskPr ? { pr: taskPr.number, headSha: taskPr.head.sha } : {}) };
+}
+
 export function replaceStatus(text, expected, status) {
   if (!['in_progress', 'review', 'blocked', 'done'].includes(status)) throw new Error('Automation cannot authorize planning work.');
   const front = text.match(/^(?:\uFEFF)?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
