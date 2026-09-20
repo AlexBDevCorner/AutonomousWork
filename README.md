@@ -132,6 +132,8 @@ Agents must never "helpfully" act outside their role, even if blocked.
   - Changes `draft` → `ready`.
   - Changes `priority`.
   - Can pause projects (`enabled: false`).
+  - Explicitly authorizes a bounded retry of a retryable blocked worker
+    execution by supplying its task ID to the dispatcher.
   - This is the only role that may do any of the above.
 
 - **Dispatcher** — selects ready work:
@@ -186,6 +188,7 @@ Authorization boundary:
 | Pause project (`enabled`) | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Select next `ready` task | ❌ | ✅ | ❌ | ❌ | ❌ |
 | Claim `ready` → `in_progress` | ❌ | ✅ | ❌ | ❌ | ❌ |
+| Authorize retry of retryable blocked worker | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Implement task / open PR | ❌ | ❌ | ✅ (one claimed task) | ❌ | ❌ |
 | Review PR (approve / request changes) | ✅ | ❌ | ❌ | ✅ | ❌ |
 | Merge approved autonomous PR under guarded protocol | ✅ | ❌ | ❌ | ✅ | ❌ |
@@ -228,6 +231,11 @@ blocked project can never starve the others.
    [Reconciler] sets `done` only after an observed merge, recording its SHA and
    timestamp. Human status overrides must reconcile the matching execution record
    in the same operator change.
+7. [Human + Dispatcher] A retryable blocked implementation is never retried
+   automatically. A Human may explicitly request a retry by task ID; the
+   Dispatcher revalidates the current project/task/run/PR guards, preserves the
+   failed attempt in the ledger, appends a fresh implementation attempt, commits
+   `blocked -> in_progress`, and only then dispatches the new claim.
 
 ### Autonomous worker pilot (RepoManager — steps 8–10)
 
