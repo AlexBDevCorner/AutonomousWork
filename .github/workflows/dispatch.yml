@@ -47,6 +47,7 @@ jobs:
           repositories: |
             AutonomousWork
             RepoManager
+            MandarinBotNet
           permission-contents: write
           permission-actions: write
           permission-pull-requests: read
