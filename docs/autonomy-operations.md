@@ -42,8 +42,7 @@
    a Human promotes `draft` to `ready`; there is no separate per-task allowlist.
    Project enrollment in `automation/config.json` and project/global enable
    switches remain independent safety boundaries.
-7. The dispatcher/reconciler is scheduled every 30 minutes at minutes 07 and 37
-   UTC and always runs in apply mode. Keep `automation/config.json.enabled` true
+7. The dispatcher/reconciler is scheduled every 10 minutes at minutes 03, 13, 23, 33, 43, and 53 UTC and always runs in apply mode. Keep `automation/config.json.enabled` true
    only while autonomous execution is intended. The blocked-review/correction
    path still needs a dedicated bounded live fixture; never invent a finding
    against good code merely to exercise it.
@@ -121,7 +120,7 @@ The RepoManager worker uses `opencode-go/muse-spark-1.3-contributor` with
 `83abc64a5c4e0e0a5157f2c4435d34131009a404`; update that pin deliberately
 after reviewing upstream changes rather than following `@latest`.
 
-Scheduled dispatcher/reconciliation is enabled every 30 minutes. A normal
+Scheduled dispatcher/reconciliation is enabled every 10 minutes. A normal
 ChatGPT scheduled task runs hourly and follows `reviewer/CHATGPT_REVIEW.md` to
 review eligible autonomous PR heads and guarded-merge trusted approved heads.
 The merge uses GitHub's exact `expected_head_sha` guard; the reconciler remains
