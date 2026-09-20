@@ -8,8 +8,10 @@ export function validateConfig(config) {
   if (config.version !== 1 || typeof config.enabled !== 'boolean') throw new Error('Invalid automation version/enabled.');
   if (!/^[\w.-]+\/[\w.-]+$/.test(config.controlRepository) || !/^[\w./-]+$/.test(config.controlBranch))
     throw new Error('Invalid control repository/branch.');
-  for (const k of ['maxAttempts', 'maxCorrectionRounds', 'maxStartsPerProjectPerDay', 'dispatchGraceMinutes', 'maxRunMinutes'])
+  for (const k of ['maxAttempts', 'maxCorrectionRounds', 'maxStartsPerProjectPerDay', 'dispatchGraceMinutes'])
     if (!Number.isInteger(config[k]) || config[k] < 1 || config[k] > 120) throw new Error(`Invalid limit: ${k}`);
+  if (!Number.isInteger(config.maxRunMinutes) || config.maxRunMinutes < 1 || config.maxRunMinutes > 360)
+    throw new Error('Invalid limit: maxRunMinutes');
   for (const k of ['reviewers', 'requiredChecks'])
     if (!Array.isArray(config[k]) || config[k].some(v => typeof v !== 'string' || !v.trim())) throw new Error(`Invalid ${k}`);
   if (!config.requiredChecks.length) throw new Error('At least one required CI check is needed.');
