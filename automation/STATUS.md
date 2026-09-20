@@ -6,4 +6,4 @@ Automatic execution: enabled.
 | --- | --- | --- | --- | --- | --- |
 | mandarinbotnet | none | not enrolled | | 0 / 0 | |
 | repomanager | RM-003 | done | [#22](https://github.com/AlexBDevCorner/RepoManager/pull/22) | 4 / 0 | success |
-| repomanager | RM-004 | blocked |  | 1 / 0 | worker_failure |
+| repomanager | RM-004 | in_progress |  | 2 / 0 | pending |
