@@ -29,7 +29,7 @@ invokes `opencode github run` without an auto-approval input.
 | 1-5: control model, ownership, template, validation, selection | Implemented; 42 existing tests pass | Added validated JSON catalog for orchestration; retained .NET as planning authority |
 | 6: cross-repository App authentication | App-token test workflow exists | Verified live during RM-003 after granting/approving the required App installation permissions |
 | 7-10: OpenCode pilot, worker, PR metadata, concurrency | Implemented | RM-001 proved the manual worker; RM-003 proved claimed worker execution, PR metadata, CI and verification |
-| 11: dispatcher | Implemented | Durable claim before dispatch; enrolled projects; `ready` is the sole task authorization status; scheduled every 10 minutes and always applies |
+| 11: dispatcher | Implemented | Durable claim before dispatch; enrolled projects; `ready` is the sole task authorization status; triggered by the ChatGPT heartbeat push and always applies |
 | 12: reconciliation | Absent | Run correlation by task plus attempt UUID; PR/run/merge observations; status-only task edits; separate execution JSON; atomic state commit |
 | 13: review protocol | Implemented | reviewer/CHATGPT_REVIEW.md now defines exact-head review plus guarded merge |
 | 14: normal ChatGPT scheduled reviewer | Configured | Hourly ChatGPT automation re-reads the protocol and can submit trusted reviews with GitHub write access |
