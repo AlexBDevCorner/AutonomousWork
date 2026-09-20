@@ -10,8 +10,9 @@
 3. Verify the existing GitHub App test. The dispatcher uses
    `AUTONOMOUS_APP_CLIENT_ID` and `AUTONOMOUS_APP_PRIVATE_KEY` from the control
    repository. Its installation token needs control Contents write, target
-   Actions write, Pull requests read and Checks read. Preview requests read
-   permissions only. Install it only on the participating repositories.
+   Actions write, Pull requests read and Checks read. The dispatcher always runs
+   in apply mode now, so its installation token always requests the required
+   write permissions. Install it only on the participating repositories.
 4. The target still uses the existing `CONTROL_REPO_TOKEN` for private control
    reads and `OPENCODE_API_KEY` for OpenCode Go. Those are not copied into files.
    GitHub authentication for the worker itself is a short-lived GitHub App
@@ -41,9 +42,11 @@
    a Human promotes `draft` to `ready`; there is no separate per-task allowlist.
    Project enrollment in `automation/config.json` and project/global enable
    switches remain independent safety boundaries.
-7. Keep `automation/config.json.enabled` true only while autonomous execution is
-   intended. Before enabling a schedule, prove the blocked-review/correction path
-   using an actual bounded fixture, never an invented finding against good code.
+7. The dispatcher/reconciler is scheduled every 30 minutes at minutes 07 and 37
+   UTC and always runs in apply mode. Keep `automation/config.json.enabled` true
+   only while autonomous execution is intended. The blocked-review/correction
+   path still needs a dedicated bounded live fixture; never invent a finding
+   against good code merely to exercise it.
 
 ## Local checks
 
@@ -65,17 +68,14 @@ node --test tools/autonomy/*.test.mjs
 node tools/autonomy/run.mjs --validate
 ```
 
-With `GH_TOKEN` already supplied through the environment, this reads GitHub and
-writes only local status/queue output. It never dispatches or changes GitHub.
-
-```powershell
-node tools/autonomy/run.mjs
-```
+With `GH_TOKEN` already supplied through the environment, `node
+tools/autonomy/run.mjs` remains a local read-only preview command.
 
 `--apply` is a write operation. It commits reconciliation and claims to the
 configured control branch and dispatches eligible work when the global switch
-allows it. Use the manual Actions workflow for this operation. Do not run apply
-from a modified or stale checkout. Branch updates reject a stale parent SHA.
+allows it. The GitHub Actions dispatcher uses `--apply` for both scheduled and
+manual runs. Do not run apply locally from a modified or stale checkout. Branch
+updates reject a stale parent SHA.
 
 ## Status, failures and recovery
 
@@ -121,5 +121,5 @@ The RepoManager worker uses `opencode-go/muse-spark-1.3-contributor` with
 `83abc64a5c4e0e0a5157f2c4435d34131009a404`; update that pin deliberately
 after reviewing upstream changes rather than following `@latest`.
 
-Scheduled dispatch and the normal ChatGPT reviewer are not enabled by this
-change. No automatic merge path exists yet.
+Scheduled dispatcher/reconciliation is enabled every 30 minutes. The normal
+ChatGPT reviewer is not scheduled yet, and no automatic merge path exists yet.
