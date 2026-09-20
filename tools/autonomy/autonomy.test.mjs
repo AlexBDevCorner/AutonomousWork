@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { chooseWork, reconcile, replaceStatus, runTitle, latestReview, ciGreen, validateConfig } from './policy.mjs';
+import { chooseWork, chooseRetry, reconcile, replaceStatus, runTitle, latestReview, ciGreen, validateConfig } from './policy.mjs';
 import { coordinate, validateState } from './coordinator.mjs';
 import { authorize, assertTaskSpecUnchanged } from './worker.mjs';
 import { GitHub } from './github.mjs';
@@ -58,6 +58,30 @@ test('closed historical task PR is never silently reopened or reimplemented', ()
 });
 test('blocked recorded work holds a project even with no PR', () => {
   const f = fixture(); f.state.executions = [{ ...record(), status: 'blocked' }]; assert.equal(select(f), null);
+});
+
+test('explicit retry selects only an observed retryable blocked implementation', () => {
+  const f = fixture();
+  f.catalog.tasks[0].status = 'blocked';
+  const e = { ...record(), status: 'blocked', blockReason: 'worker_failure' };
+  e.attempts[0] = { ...e.attempts[0], runId: 8, conclusion: 'failure', completedAt: new Date(now).toISOString() };
+  f.state.executions = [e];
+  assert.equal(chooseRetry('RM-001', f.catalog, f.state, { repomanager: f.snapshot }, f.config, now).retry, true);
+
+  e.blockReason = 'merge_conflict';
+  assert.equal(chooseRetry('RM-001', f.catalog, f.state, { repomanager: f.snapshot }, f.config, now), null);
+});
+
+test('explicit retry allows the same task partial PR but rejects other active autonomous work', () => {
+  const f = fixture();
+  f.catalog.tasks[0].status = 'blocked';
+  const e = { ...record(), status: 'blocked', blockReason: 'worker_failure' };
+  e.attempts[0] = { ...e.attempts[0], runId: 8, conclusion: 'failure', completedAt: new Date(now).toISOString() };
+  f.state.executions = [e];
+  f.snapshot.prs = [pr({ draft: true })];
+  assert.equal(chooseRetry('RM-001', f.catalog, f.state, { repomanager: f.snapshot }, f.config, now).pr, 1);
+  f.snapshot.prs.push({ ...pr({ number: 2 }), head: { ref: 'autonomous/OTHER-001', sha, repo: { full_name: 'Owner/Repo' } } });
+  assert.equal(chooseRetry('RM-001', f.catalog, f.state, { repomanager: f.snapshot }, f.config, now), null);
 });
 test('one blocked project does not starve an available project', () => {
   const f = fixture(); f.catalog.projects.push({ ...f.catalog.projects[0], id: 'other', repository: 'Owner/Other' });
@@ -150,6 +174,30 @@ test('claim is durably saved before dispatch and pinned SHA is passed', async ()
   assert.equal(f.calls[1][3].control_commit, 'b'.repeat(40));
   assert.match(f.calls[0][4][f.catalog.tasks[0].relativePath], /status: in_progress/);
   assert.equal(JSON.parse(f.calls[0][4]['automation/state.json']).executions[0].attempts[0].id, id);
+});
+
+test('explicit blocked retry preserves history and appends a new implementation attempt', async () => {
+  const f = fixture();
+  f.catalog.tasks[0].status = 'blocked';
+  f.taskTexts[f.catalog.tasks[0].relativePath] = Object.values(f.taskTexts)[0].replace('status: ready', 'status: blocked');
+  const oldId = '00000000-0000-0000-0000-000000000099';
+  const e = { ...record(), status: 'blocked', blockReason: 'worker_failure' };
+  e.attempts[0] = { ...e.attempts[0], id: oldId, runId: 8, conclusion: 'failure', completedAt: new Date(now).toISOString() };
+  f.state.executions = [e];
+  const result = await coordinate({ ...f, apply: true, retryTaskId: 'RM-001' });
+  assert.equal(result.state.executions[0].attempts.length, 2);
+  assert.equal(result.state.executions[0].attempts[0].id, oldId);
+  assert.equal(result.state.executions[0].attempts[1].id, id);
+  assert.equal(result.state.executions[0].status, 'in_progress');
+  assert.equal(result.state.executions[0].blockReason, null);
+  assert.deepEqual(f.calls.map(c => c[0]), ['commit', 'dispatch', 'commit']);
+  assert.match(f.calls[0][4][f.catalog.tasks[0].relativePath], /status: in_progress/);
+});
+
+test('explicit retry fails closed instead of dispatching unrelated work', async () => {
+  const f = fixture();
+  await assert.rejects(() => coordinate({ ...f, apply: true, retryTaskId: 'RM-999' }), /not eligible/);
+  assert.deepEqual(f.calls, []);
 });
 test('concurrent control write prevents dispatch', async () => {
   const f = fixture(); f.api.commitFiles = async () => { throw new Error('conflict'); };
