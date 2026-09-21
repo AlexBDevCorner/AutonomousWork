@@ -7,6 +7,10 @@
     "repomanager": {
       "branch": "master",
       "workflow": "autonomous-worker.yml"
+    },
+    "mandarinbotnet": {
+      "branch": "main",
+      "workflow": "autonomous-worker.yml"
     }
   },
   "maxAttempts": 5,
