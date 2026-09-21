@@ -13,6 +13,7 @@ function fixture() {
   const config = JSON.parse(readFileSync(new URL('../../automation/config.json', import.meta.url)));
   config.enabled = true;
   config.reviewers = ['review-bot'];
+  config.projects = { repomanager: config.projects.repomanager };
   const project = { id: 'repomanager', repository: 'Owner/Repo', enabled: true, maxActiveTasks: 1, relativePath: 'projects/repomanager/project.yaml' };
   const task = { id: 'RM-001', projectId: project.id, priority: 100, status: 'ready', dependsOn: [], relativePath: 'projects/repomanager/tasks/RM-001.md' };
   const catalog = { projects: [project], tasks: [task] };
