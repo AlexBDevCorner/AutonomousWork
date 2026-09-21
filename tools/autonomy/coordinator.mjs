@@ -104,7 +104,7 @@ export async function coordinate({ catalog, state: initial, config, sourceSha, t
       const receipt = await api.dispatch(execution.repository, config.projects[execution.projectId], {
         task_id: execution.taskId, task_path: selected.task.relativePath, control_repo: config.controlRepository,
         control_commit: claimSha, attempt_id: attempt.id, mode: selected.kind,
-        review_id: String(selected.reviewId ?? ''), expected_head: selected.headSha ?? '',
+        review_id: String(selected.reviewId ?? ''), expected_head: selected.kind === 'correction' ? (selected.headSha ?? '') : '',
       });
       attempt.dispatchStatus = 'sent';
       if (receipt?.workflow_run_id) { attempt.runId = receipt.workflow_run_id; attempt.runUrl = receipt.html_url; }

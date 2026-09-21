@@ -187,6 +187,7 @@ test('explicit blocked retry preserves history and appends a new implementation 
   const e = { ...record(), status: 'blocked', blockReason: 'worker_failure' };
   e.attempts[0] = { ...e.attempts[0], id: oldId, runId: 8, conclusion: 'failure', completedAt: new Date(now).toISOString() };
   f.state.executions = [e];
+  f.snapshot.prs = [pr({ draft: true })];
   const result = await coordinate({ ...f, apply: true, retryTaskId: 'RM-001' });
   assert.equal(result.state.executions[0].attempts.length, 2);
   assert.equal(result.state.executions[0].attempts[0].id, oldId);
@@ -194,6 +195,7 @@ test('explicit blocked retry preserves history and appends a new implementation 
   assert.equal(result.state.executions[0].status, 'in_progress');
   assert.equal(result.state.executions[0].blockReason, null);
   assert.deepEqual(f.calls.map(c => c[0]), ['commit', 'dispatch', 'commit']);
+  assert.equal(f.calls[1][3].expected_head, '');
   assert.match(f.calls[0][4][f.catalog.tasks[0].relativePath], /status: in_progress/);
 });
 
