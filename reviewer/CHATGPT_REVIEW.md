@@ -12,17 +12,23 @@ Before reviewing or merging anything:
    `project.yaml` from `AlexBDevCorner/AutonomousWork` master.
 2. Stop if global automation is disabled, the project is not enrolled, or the
    project has `enabled: false`.
-3. Use only an execution whose persisted status is `review`.
+3. Use an execution whose persisted status is `review`. A blocked execution
+   may also be reviewed only when its `blockReason` is `worker_failure`, it
+   already has exactly one linked open autonomous PR for that task, the PR is
+   non-draft and mergeable, and every configured required CI check has succeeded
+   for the current head. No other blocked reason is review-eligible.
 4. The target PR must be the execution's recorded PR in the recorded target
    repository, be open and non-draft, target the configured base branch, and use
    branch `autonomous/<TASK-ID>` from that same repository. Never authorize a fork.
-5. Require labels `autonomous`, `autonomous:opencode`, and
-   `task:<TASK-ID>`.
-6. Read the exact `<control-repository>@<commit>: <task-path>` recorded under
-   the PR's `Control specification` section. The repository and path must match
-   the execution/task mapping. Read the target repository's `AGENTS.md` at the
-   PR base as well. Missing or contradictory requirements are blockers, not
-   permission to invent work.
+5. Treat autonomous labels as useful metadata, not an authorization boundary.
+   Their absence alone must not block review or merge. If labels are present but
+   contradict the recorded task mapping, treat that inconsistency as a blocker.
+6. Read the authoritative task specification from the control repository and the
+   target repository's `AGENTS.md` at the PR base. The persisted execution,
+   project mapping, recorded PR number, repository, task ID and configured base
+   branch are the authorization source of truth. If the PR body contains a
+   `<control-repository>@<commit>: <task-path>` pin, validate it and use it as
+   additional evidence. A missing PR-body pin by itself is not a blocker.
 
 ## Review
 
@@ -62,8 +68,8 @@ GitHub read immediately before the merge:
 - the same execution is still persisted as `review`;
 - global automation, project enrollment, and project `enabled` are still active;
 - the same PR is still open, non-draft, and mergeable;
-- repository, base branch, task ID, `autonomous/<TASK-ID>` head branch, and all
-  required autonomous labels still match the control state;
+- repository, base branch, task ID, and `autonomous/<TASK-ID>` head branch
+  still match the control state;
 - the PR head SHA is exactly the reviewed SHA;
 - every configured required check is completed successfully for that exact SHA;
 - the latest trusted completed review for that exact SHA is APPROVED;
@@ -95,8 +101,14 @@ from master on every run rather than relying on a copied stale protocol.
 > AlexBDevCorner/AutonomousWork. Read reviewer/CHATGPT_REVIEW.md,
 > automation/config.json, automation/state.json, the relevant project.yaml and
 > task specification from master, then follow the repository protocol exactly.
-> Act only on enabled, enrolled projects with executions in review. Review only
-> the exact current autonomous PR head. Submit REQUEST_CHANGES for genuine
+> Act on enabled, enrolled projects with executions in review. A blocked
+> execution is also review-eligible only when its block reason is
+> `worker_failure` and it already has exactly one linked open autonomous PR whose
+> current head is non-draft, mergeable, and green on every configured required
+> CI check. Review only the exact current autonomous PR head. Treat PR labels and
+> an embedded control-specification pin as optional metadata; the persisted
+> execution/task/project mapping is authoritative. Validate such metadata when
+> present, but do not withhold review solely because it is absent. Submit REQUEST_CHANGES for genuine
 > blocking P0/P1 findings, or APPROVE only after every configured required CI
 > check succeeds for that exact head. Do not duplicate an existing trusted
 > completed verdict on the same head. For an exact head whose latest trusted
