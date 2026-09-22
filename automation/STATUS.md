@@ -8,7 +8,7 @@ Automatic execution: enabled.
 | mandarinbotnet | MB-002 | done | [#54](https://github.com/AlexBDevCorner/MandarinBotNet/pull/54) | 1 / 0 | success |
 | mandarinbotnet | MB-003 | done | [#55](https://github.com/AlexBDevCorner/MandarinBotNet/pull/55) | 1 / 0 | success |
 | mandarinbotnet | MB-004 | done | [#56](https://github.com/AlexBDevCorner/MandarinBotNet/pull/56) | 1 / 0 | success |
-| mandarinbotnet | MB-005 | in_progress |  | 1 / 0 | pending |
+| mandarinbotnet | MB-005 | blocked |  | 1 / 0 | worker_succeeded_without_pull_request |
 | repomanager | RM-003 | done | [#22](https://github.com/AlexBDevCorner/RepoManager/pull/22) | 4 / 0 | success |
 | repomanager | RM-004 | done | [#23](https://github.com/AlexBDevCorner/RepoManager/pull/23) | 2 / 0 | success |
-| repomanager | RM-005 | in_progress |  | 2 / 0 | pending |
+| repomanager | RM-005 | review | [#25](https://github.com/AlexBDevCorner/RepoManager/pull/25) | 2 / 0 | success |
