@@ -290,7 +290,10 @@
           "completedAt": null
         }
       ],
-      "blockReason": null
+      "blockReason": null,
+      "pr": 26,
+      "headSha": "a063f9836e46be019cc89ed86852a7efd2f49e02",
+      "prUrl": "https://github.com/AlexBDevCorner/RepoManager/pull/26"
     }
   ]
 }
