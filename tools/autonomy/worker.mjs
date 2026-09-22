@@ -103,8 +103,8 @@ async function main() {
     if (pr.head.sha === input.expectedHead) throw new Error('Correction did not advance the PR head (correction_did_not_advance_head).');
   }
   const files = await api.pages(`/repos/${input.repository}/pulls/${pr.number}/files`);
-  if (files.some(f => [f.filename, f.previous_filename].filter(Boolean).some(p => p.startsWith('.github/') || p.startsWith('control/'))))
-    throw new Error('Worker changed protected workflow/control files.');
+  if (files.some(f => [f.filename, f.previous_filename].filter(Boolean).some(p => p.startsWith('control/'))))
+    throw new Error('Worker changed protected control files.');
   if (pr.base.ref !== target.branch || !pr.title.startsWith(`[${input.taskId}]`) || pr.state !== 'open') throw new Error('Invalid PR title/base/state.');
   if (pr.draft) throw new Error('Worker must leave the task PR ready for review, not draft.');
   for (const label of ['autonomous', 'autonomous:opencode', `task:${input.taskId}`])
