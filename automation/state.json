@@ -219,10 +219,17 @@
           "kind": "implementation",
           "startedAt": "2026-09-22T09:50:27.025Z",
           "sourceControlSha": "69d7e0a56d76c94590407ca2cbd7df3558251da7",
-          "dispatchStatus": "sent"
+          "dispatchStatus": "sent",
+          "runId": 35712668648,
+          "runUrl": "https://github.com/AlexBDevCorner/MandarinBotNet/actions/runs/35712668648",
+          "conclusion": null,
+          "completedAt": null
         }
       ],
-      "blockReason": null
+      "blockReason": null,
+      "pr": 56,
+      "headSha": "c0563575048d97fb1996a0dd072ede2f429bba55",
+      "prUrl": "https://github.com/AlexBDevCorner/MandarinBotNet/pull/56"
     }
   ]
 }
