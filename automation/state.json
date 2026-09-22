@@ -210,7 +210,7 @@
           "kind": "implementation",
           "startedAt": "2026-09-22T10:35:56.463Z",
           "sourceControlSha": "d99b39415e89cfb232f5faf949662defcecffbd4",
-          "dispatchStatus": "pending"
+          "dispatchStatus": "sent"
         }
       ],
       "blockReason": null
