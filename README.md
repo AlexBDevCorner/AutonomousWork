@@ -103,14 +103,19 @@ Rules:
   first. Ties broken by task ID ascending.
 - `depends_on` lists task IDs that must be `done` before this task is eligible.
   Dependencies must live in the same project (cross-project dependencies are
-  rejected by validation).
+  rejected by validation). Once a task is authorized, an unfinished dependency
+  does not make the task `blocked`; keep it `ready` and let dependency gating
+  make it temporarily ineligible.
 - Only tasks with `status: ready` (and all dependencies `done`) are executable.
 - Supported statuses:
   - `draft` — not yet specified, never executed.
-  - `ready` — eligible for execution.
+  - `ready` — authorized for execution; the dispatcher may still defer it while
+    dependencies are unfinished, capacity is occupied, or another autonomous PR
+    holds the project.
   - `in_progress` — claimed by a worker (one worker per task).
   - `review` — work finished, awaiting human/automated verification.
-  - `blocked` — cannot proceed, requires intervention.
+  - `blocked` — an execution/recovery problem requires intervention. Never use
+    this status solely because a declared `depends_on` task is unfinished.
   - `done` — completed and verified.
 - Every non-`draft` task must contain all template sections (`Goal`,
   `Context`, `Requirements`, `Acceptance criteria`, `Verification`,
@@ -381,6 +386,8 @@ see it.
 3. Fill in every section (goal + requirements + acceptance criteria +
    verification + out of scope required). Promote `draft` → `ready` (Human
    only) when the file alone lets OpenCode understand completion.
-4. Set `priority` (higher = more urgent) and `depends_on` if ordered.
+4. Set `priority` (higher = more urgent) and `depends_on` if ordered. A task
+   that is fully authorized but waiting on dependencies stays `ready`; do not
+   mark it `blocked` just because those dependencies are not yet `done`.
 5. Run `dotnet run --project tools/AutonomousWork.Cli -- validate` before
    pushing — CI enforces the same check.
