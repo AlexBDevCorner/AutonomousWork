@@ -253,7 +253,7 @@
       "taskId": "MB-005",
       "projectId": "mandarinbotnet",
       "repository": "AlexBDevCorner/MandarinBotNet",
-      "status": "review",
+      "status": "done",
       "attempts": [
         {
           "id": "51532932-a274-4307-9264-fc9f126afa0f",
@@ -270,7 +270,9 @@
       "blockReason": null,
       "pr": 58,
       "headSha": "1c5a227281751144851f091d883076563125398b",
-      "prUrl": "https://github.com/AlexBDevCorner/MandarinBotNet/pull/58"
+      "prUrl": "https://github.com/AlexBDevCorner/MandarinBotNet/pull/58",
+      "completedAt": "2026-09-22T14:41:55Z",
+      "mergeSha": "44a58e861ea7ba01867d1f4512a48f3af954d163"
     },
     {
       "taskId": "RM-006",
