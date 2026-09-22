@@ -37,6 +37,16 @@ Before reviewing or merging anything:
    and acceptance criteria, correctness, architecture, regressions, error
    handling, tests, scope, concurrency, and applicable security risks. Verify
    reported test evidence against GitHub CI; the PR summary is not proof.
+   Follow changed dependencies outward into unchanged integration code instead
+   of reviewing only touched files. In particular, when a PR adds/removes a
+   project, project reference, package/dependency, solution member, executable
+   entry point, generated artifact, or other build-topology input, inspect the
+   repository's Dockerfiles, CI workflows, restore/publish/package manifests,
+   deployment manifests and scripts, and any manually enumerated copy/restore
+   inputs that can be invalidated by that change. A green solution build/test
+   check is not proof that the production package/container/deployment path is
+   valid. A reproducibly broken production build or deployment path is a P1
+   correctness finding.
 3. P0 means critical impact. P1 blocks correctness, requirements, or safe
    operation. P2 is an optional improvement. For each finding, give a concrete
    trigger and consequence and identify the affected file/line where practical.
