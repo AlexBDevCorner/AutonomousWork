@@ -15,4 +15,4 @@ Automatic execution: enabled.
 | repomanager | RM-006 | done | [#26](https://github.com/AlexBDevCorner/RepoManager/pull/26) | 1 / 0 | success |
 | repomanager | RM-007 | done | [#27](https://github.com/AlexBDevCorner/RepoManager/pull/27) | 1 / 0 | success |
 | repomanager | RM-008 | done | [#28](https://github.com/AlexBDevCorner/RepoManager/pull/28) | 1 / 0 | success |
-| repomanager | RM-009 | in_progress |  | 1 / 0 | pending |
+| repomanager | RM-009 | review | [#29](https://github.com/AlexBDevCorner/RepoManager/pull/29) | 1 / 0 | success |
