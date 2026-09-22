@@ -9,4 +9,4 @@ Automatic execution: enabled.
 | mandarinbotnet | MB-003 | review | [#55](https://github.com/AlexBDevCorner/MandarinBotNet/pull/55) | 1 / 0 | success |
 | repomanager | RM-003 | done | [#22](https://github.com/AlexBDevCorner/RepoManager/pull/22) | 4 / 0 | success |
 | repomanager | RM-004 | done | [#23](https://github.com/AlexBDevCorner/RepoManager/pull/23) | 2 / 0 | success |
-| repomanager | RM-005 | in_progress |  | 1 / 0 | pending |
+| repomanager | RM-005 | blocked |  | 1 / 0 | worker_failure |
