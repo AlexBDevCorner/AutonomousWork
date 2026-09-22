@@ -13,6 +13,11 @@ How to use this template (Human role only):
    match the file name. IDs are globally unique across all projects.
 2. Start with status: draft. Promote draft -> ready ONLY when every section
    below is filled in — draft -> ready is the human authorization boundary.
+   If an authorized task must wait for another task, keep it status: ready and
+   express that ordering only with depends_on. Do NOT use status: blocked solely
+   because a dependency is unfinished; the dispatcher already ignores ready
+   tasks until every dependency is done. Reserve blocked for exceptional
+   execution/recovery states that require intervention.
 3. The finished file must be self-contained: hand this file alone to OpenCode
    and it must understand what completion means. No chat context, no links
    that require guesswork.
