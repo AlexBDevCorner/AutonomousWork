@@ -303,17 +303,24 @@
       "taskId": "RM-007",
       "projectId": "repomanager",
       "repository": "AlexBDevCorner/RepoManager",
-      "status": "in_progress",
+      "status": "review",
       "attempts": [
         {
           "id": "f0c12227-57c9-4823-b279-73bf13ff33c3",
           "kind": "implementation",
           "startedAt": "2026-09-22T15:50:42.348Z",
           "sourceControlSha": "acd4ad9a2c8f0efbdf4fac30b8026a264b98d19a",
-          "dispatchStatus": "sent"
+          "dispatchStatus": "sent",
+          "runId": 35750038485,
+          "runUrl": "https://github.com/AlexBDevCorner/RepoManager/actions/runs/35750038485",
+          "conclusion": "success",
+          "completedAt": "2026-09-22T16:04:06Z"
         }
       ],
-      "blockReason": null
+      "blockReason": null,
+      "pr": 27,
+      "headSha": "47a4f63fb010e6f081da9c2cd88415ca5524e2fc",
+      "prUrl": "https://github.com/AlexBDevCorner/RepoManager/pull/27"
     }
   ]
 }
