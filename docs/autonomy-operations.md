@@ -90,10 +90,15 @@ queue is advisory; the reviewer must re-read GitHub before submitting a verdict.
 The current retry policy is intentionally conservative. Transient 5xx reads
 retry twice. A failed/uncertain dispatch is never resent automatically. It waits
 up to 15 minutes for a matching run, then blocks. A failed worker blocks even if
-it produced a partial PR. A correction that succeeds without advancing the PR
-head past the reviewed SHA fails verification and reconciles to
-`correction_did_not_advance_head` instead of returning to review, so a consumed
-review ID can never deadlock the task. Closing an unmerged PR blocks the task;
+it produced a partial PR. A correction normally must advance the PR head past
+the reviewed SHA and then returns to review. The one intentional exception is an
+explicit developer disagreement: the worker leaves the reviewed head unchanged
+and posts a machine-readable `autonomous-review-disagreement:v1` PR comment
+bound to the exact review ID and reviewed SHA. Reconciliation then blocks with
+`autonomous_review_disagreement` for human resolution. An unchanged correction
+without that trusted disagreement marker blocks as
+`correction_did_not_advance_head`, so a consumed review ID can never deadlock
+the task. Closing an unmerged PR blocks the task;
 automation does not reopen it. A merge can still reconcile a blocked task to done.
 `maxAttempts` bounds implementation attempts per task and
 `maxStartsPerProjectPerDay` bounds worker starts per project/day. They are
