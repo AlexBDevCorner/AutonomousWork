@@ -45,7 +45,7 @@ export class GitHub {
         runs.push(await this.request('GET', `${prefix}/actions/runs/${attempt.runId}`));
     }
     const relevantRuns = runs.filter(r => r.path === `.github/workflows/${target.workflow}` || r.path === '.github/workflows/opencode.yml');
-    const reviews = {}, checks = {};
+    const reviews = {}, checks = {}, comments = {};
     for (let i = 0; i < prs.length; i++) {
       const pr = prs[i];
       if (!pr.head.ref.startsWith('autonomous/')) continue;
@@ -54,9 +54,10 @@ export class GitHub {
       if (pr.state === 'open') {
         reviews[pr.number] = await this.pages(`${prefix}/pulls/${pr.number}/reviews`);
         checks[pr.number] = await this.pages(`${prefix}/commits/${pr.head.sha}/check-runs`, 'check_runs');
+        comments[pr.number] = await this.pages(`${prefix}/issues/${pr.number}/comments`);
       }
     }
-    return { prs, runs: relevantRuns, reviews, checks };
+    return { prs, runs: relevantRuns, reviews, checks, comments };
   }
   async commitFiles(repository, branch, parent, files, message) {
     const prefix = `/repos/${repository}`;
