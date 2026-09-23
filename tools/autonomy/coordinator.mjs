@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { chooseWork, chooseRetry, reconcile, latestAttempt, latestReview, ciGreen, replaceStatus, summary, validateConfig } from './policy.mjs';
+import { chooseWork, chooseRetry, reconcile, latestAttempt, latestReview, ciGreen, requiredCiState, replaceStatus, summary, validateConfig } from './policy.mjs';
 
 export function validateState(catalog, state, config) {
   validateConfig(config);
@@ -54,12 +54,18 @@ export async function coordinate({ catalog, state: initial, config, sourceSha, t
     if (e.status === 'blocked' && next.status !== 'done') next = { ...next, status: 'blocked', blockReason: e.blockReason };
     const pr = snapshots[e.projectId].prs.find(p => p.number === next.pr);
     if (pr && next.status === 'review') {
+      const checks = snapshots[e.projectId].checks[pr.number] ?? [];
+      const ci = requiredCiState(checks, config.requiredChecks);
       const review = latestReview(pr, snapshots[e.projectId].reviews[pr.number] ?? [], config.reviewers);
-      if (review?.state === 'CHANGES_REQUESTED' && next.attempts.filter(a => a.kind === 'correction').length >= config.maxCorrectionRounds)
+      if (ci.state === 'failed' && next.attempts.filter(a => a.reason === 'ci_repair').length >= config.maxCorrectionRounds)
+        next = { ...next, status: 'blocked', blockReason: 'ci_repair_loop_exceeded' };
+      else if (ci.state === 'green' && review?.state === 'CHANGES_REQUESTED' &&
+          next.attempts.filter(a => a.kind === 'correction').length >= config.maxCorrectionRounds)
         next = { ...next, status: 'blocked', blockReason: 'autonomous_review_loop_exceeded' };
-      if (!review && !pr.draft) reviewQueue.push({ repository: e.repository, taskId: e.taskId, pr: pr.number,
-        headSha: pr.head.sha, ciGreen: ciGreen(snapshots[e.projectId].checks[pr.number] ?? [], config.requiredChecks),
-        taskPath: task.relativePath, sourceControlSha: latestAttempt(e).sourceControlSha });
+      if (next.status === 'review' && ci.state === 'green' && !review && !pr.draft)
+        reviewQueue.push({ repository: e.repository, taskId: e.taskId, pr: pr.number,
+          headSha: pr.head.sha, ciGreen: ciGreen(checks, config.requiredChecks),
+          taskPath: task.relativePath, sourceControlSha: latestAttempt(e).sourceControlSha });
     }
     state.executions[i] = next;
     status(next, next.status);
@@ -81,7 +87,8 @@ export async function coordinate({ catalog, state: initial, config, sourceSha, t
     const fresh = retryTaskId
       ? chooseRetry(retryTaskId, model, state, snapshots, config, now)
       : chooseWork(model, state, snapshots, config, now);
-    if (!fresh || fresh.task.id !== selected.task.id || fresh.headSha !== selected.headSha || fresh.reviewId !== selected.reviewId)
+    if (!fresh || fresh.task.id !== selected.task.id || fresh.headSha !== selected.headSha ||
+        fresh.reviewId !== selected.reviewId || fresh.reason !== selected.reason)
       throw new Error('Target changed during dispatch planning; no claim or dispatch made.');
     let execution = state.executions.find(e => e.taskId === selected.task.id);
     if (!execution) {
@@ -90,7 +97,9 @@ export async function coordinate({ catalog, state: initial, config, sourceSha, t
       state.executions.push(execution);
     }
     const attempt = { id: newId(), kind: selected.kind, startedAt: new Date(now).toISOString(), sourceControlSha: sourceSha,
-      dispatchStatus: 'pending', ...(selected.reviewId ? { reviewId: selected.reviewId, headSha: selected.headSha } : {}) };
+      dispatchStatus: 'pending', ...(selected.reason ? { reason: selected.reason } : {}),
+      ...(selected.reviewId ? { reviewId: selected.reviewId } : {}),
+      ...((selected.kind === 'correction' || selected.reason === 'ci_repair') && selected.headSha ? { headSha: selected.headSha } : {}) };
     if (selected.kind === 'implementation' && execution.attempts.filter(a => a.kind === 'implementation').length >= config.maxAttempts)
       throw new Error('Task execution attempt limit reached.');
     execution.attempts.push(attempt);
@@ -104,7 +113,8 @@ export async function coordinate({ catalog, state: initial, config, sourceSha, t
       const receipt = await api.dispatch(execution.repository, config.projects[execution.projectId], {
         task_id: execution.taskId, task_path: selected.task.relativePath, control_repo: config.controlRepository,
         control_commit: claimSha, attempt_id: attempt.id, mode: selected.kind,
-        review_id: String(selected.reviewId ?? ''), expected_head: selected.kind === 'correction' ? (selected.headSha ?? '') : '',
+        review_id: String(selected.reviewId ?? ''),
+        expected_head: (selected.kind === 'correction' || selected.reason === 'ci_repair') ? (selected.headSha ?? '') : '',
       });
       attempt.dispatchStatus = 'sent';
       if (receipt?.workflow_run_id) { attempt.runId = receipt.workflow_run_id; attempt.runUrl = receipt.html_url; }

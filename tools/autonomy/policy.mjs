@@ -44,11 +44,17 @@ export function reviewDisagreement(pr, comments, reviewId, reviewedHead) {
     .sort((a, b) => Date.parse(a.created_at ?? 0) - Date.parse(b.created_at ?? 0) || a.id - b.id).at(-1);
 }
 
+export function requiredCiState(checks, requiredChecks) {
+  const latest = requiredChecks.map(name =>
+    checks.filter(c => c.name === name).sort((a, b) => b.id - a.id)[0]);
+  if (latest.some(check => !check || check.status !== 'completed'))
+    return { state: 'pending', latest: latest.filter(Boolean), failed: [] };
+  const failed = latest.filter(check => check.conclusion !== 'success');
+  return { state: failed.length ? 'failed' : 'green', latest, failed };
+}
+
 export function ciGreen(checks, requiredChecks) {
-  return requiredChecks.every(name => {
-    const latest = checks.filter(c => c.name === name).sort((a, b) => b.id - a.id)[0];
-    return latest?.status === 'completed' && latest.conclusion === 'success';
-  });
+  return requiredCiState(checks, requiredChecks).state === 'green';
 }
 
 export function reconcile(execution, snapshot, config, now) {
@@ -119,6 +125,14 @@ export function chooseWork(catalog, state, snapshots, config, now) {
       const pr = open[0];
       const record = records.find(e => e.pr === pr.number && e.status === 'review');
       if (!record || byId.get(record.taskId)?.status !== 'review') continue;
+      const ci = requiredCiState(snapshot.checks[pr.number] ?? [], config.requiredChecks);
+      if (ci.state === 'failed') {
+        if (record.attempts.filter(a => a.reason === 'ci_repair').length >= config.maxCorrectionRounds) continue;
+        candidates.push({ project, task: byId.get(record.taskId), kind: 'implementation', reason: 'ci_repair',
+          pr: pr.number, headSha: pr.head.sha });
+        continue;
+      }
+      if (ci.state !== 'green') continue;
       const review = latestReview(pr, snapshot.reviews[pr.number] ?? [], config.reviewers);
       if (review?.state !== 'CHANGES_REQUESTED' || record.attempts.some(a => a.reviewId === review.id)) continue;
       if (record.attempts.filter(a => a.kind === 'correction').length >= config.maxCorrectionRounds) continue;
@@ -198,11 +212,11 @@ export function replaceStatus(text, expected, status) {
 
 export function summary(catalog, state, config) {
   const lines = ['# Autonomous development status', '', `Automatic execution: ${config.enabled ? 'enabled' : 'paused'}.`, '',
-    '| Project | Task | State | PR | Attempts / corrections | Last result |', '| --- | --- | --- | --- | --- | --- |'];
+    '| Project | Task | State | PR | Attempts / review fixes / CI repairs | Last result |', '| --- | --- | --- | --- | --- | --- |'];
   for (const p of catalog.projects) {
     const records = state.executions.filter(e => e.projectId === p.id);
-    if (!records.length) lines.push(`| ${p.id} | none | ${p.enabled && config.projects[p.id] ? 'idle' : 'not enrolled'} | | 0 / 0 | |`);
-    for (const e of records) lines.push(`| ${p.id} | ${e.taskId} | ${e.status} | ${e.prUrl ? `[#${e.pr}](${e.prUrl})` : ''} | ${e.attempts.length} / ${e.attempts.filter(a => a.kind === 'correction').length} | ${e.blockReason ?? latestAttempt(e).conclusion ?? 'pending'} |`);
+    if (!records.length) lines.push(`| ${p.id} | none | ${p.enabled && config.projects[p.id] ? 'idle' : 'not enrolled'} | | 0 / 0 / 0 | |`);
+    for (const e of records) lines.push(`| ${p.id} | ${e.taskId} | ${e.status} | ${e.prUrl ? `[#${e.pr}](${e.prUrl})` : ''} | ${e.attempts.length} / ${e.attempts.filter(a => a.kind === 'correction').length} / ${e.attempts.filter(a => a.reason === 'ci_repair').length} | ${e.blockReason ?? latestAttempt(e).conclusion ?? 'pending'} |`);
   }
   return lines.join('\n') + '\n';
 }
