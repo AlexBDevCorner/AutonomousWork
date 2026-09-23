@@ -13,6 +13,7 @@ Automatic execution: enabled.
 | mandarinbotnet | MB-007 | done | [#60](https://github.com/AlexBDevCorner/MandarinBotNet/pull/60) | 1 / 0 | success |
 | mandarinbotnet | MB-008 | done | [#61](https://github.com/AlexBDevCorner/MandarinBotNet/pull/61) | 1 / 0 | success |
 | mandarinbotnet | MB-009 | done | [#62](https://github.com/AlexBDevCorner/MandarinBotNet/pull/62) | 1 / 0 | pending |
+| mandarinbotnet | MB-010 | in_progress |  | 1 / 0 | pending |
 | repomanager | RM-003 | done | [#22](https://github.com/AlexBDevCorner/RepoManager/pull/22) | 4 / 0 | success |
 | repomanager | RM-004 | done | [#23](https://github.com/AlexBDevCorner/RepoManager/pull/23) | 2 / 0 | success |
 | repomanager | RM-005 | done | [#25](https://github.com/AlexBDevCorner/RepoManager/pull/25) | 2 / 0 | success |
