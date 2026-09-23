@@ -552,17 +552,21 @@
       "taskId": "MB-010",
       "projectId": "mandarinbotnet",
       "repository": "AlexBDevCorner/MandarinBotNet",
-      "status": "in_progress",
+      "status": "blocked",
       "attempts": [
         {
           "id": "b4dc32d5-6bc4-4586-b1fe-fa37fe36a5e8",
           "kind": "implementation",
           "startedAt": "2026-09-23T15:10:30.586Z",
           "sourceControlSha": "e0232da4024ef1b2ac0a5884f667a0c1407d9984",
-          "dispatchStatus": "sent"
+          "dispatchStatus": "sent",
+          "runId": 35879647937,
+          "runUrl": "https://github.com/AlexBDevCorner/MandarinBotNet/actions/runs/35879647937",
+          "conclusion": "failure",
+          "completedAt": "2026-09-23T15:12:01Z"
         }
       ],
-      "blockReason": null
+      "blockReason": "worker_failure"
     }
   ]
 }
