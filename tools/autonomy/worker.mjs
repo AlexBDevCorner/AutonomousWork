@@ -2,7 +2,7 @@ import { appendFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { GitHub } from './github.mjs';
 import { load } from './run.mjs';
-import { autonomousPr, latestAttempt, latestReview, reviewDisagreement, runTitle } from './policy.mjs';
+import { autonomousPr, latestAttempt, latestReview, requiredCiState, reviewDisagreement, runTitle } from './policy.mjs';
 
 export function authorize({ catalog, state, config, taskId, taskPath, repository, attemptId, mode, reviewId, expectedHead }) {
   const task = catalog.tasks.find(t => t.id === taskId);
@@ -17,7 +17,8 @@ export function authorize({ catalog, state, config, taskId, taskPath, repository
         attempt?.id !== attemptId || attempt.kind !== mode ||
         String(attempt.reviewId ?? '') !== String(reviewId ?? '') || (attempt.headSha ?? '') !== (expectedHead ?? '') ||
         execution.attempts.filter(a => a.kind === 'implementation').length > config.maxAttempts ||
-        execution.attempts.filter(a => a.kind === 'correction').length > config.maxCorrectionRounds)
+        execution.attempts.filter(a => a.kind === 'correction').length > config.maxCorrectionRounds ||
+        execution.attempts.filter(a => a.reason === 'ci_repair').length > config.maxCorrectionRounds)
       throw new Error('Missing, stale, disabled, or mismatched dispatcher claim.');
     return { task, project, execution, attempt };
   }
@@ -91,6 +92,21 @@ async function main() {
       const comments = await api.pages(`/repos/${input.repository}/pulls/${pr.number}/reviews/${review.id}/comments`);
       writeFileSync(resolve(process.env.RUNNER_TEMP, 'blocking-review.json'), JSON.stringify({ review, comments }, null, 2));
     }
+    if (input.mode === 'implementation' && input.expectedHead) {
+      const pr = own[0];
+      if (!pr || pr.state !== 'open' || pr.head.sha !== input.expectedHead)
+        throw new Error('PR head changed since the failed CI observation.');
+      const checks = await api.pages(`/repos/${input.repository}/commits/${pr.head.sha}/check-runs`, 'check_runs');
+      const ci = requiredCiState(checks, config.requiredChecks);
+      if (ci.state !== 'failed') throw new Error('Required CI is no longer failing on the pinned PR head.');
+      const failed = ci.failed.map(check => ({
+        id: check.id, name: check.name, status: check.status, conclusion: check.conclusion,
+        details_url: check.details_url ?? null, html_url: check.html_url ?? null,
+        output: check.output ? { title: check.output.title ?? null, summary: check.output.summary ?? null } : null,
+      }));
+      writeFileSync(resolve(process.env.RUNNER_TEMP, 'failed-ci.json'),
+        JSON.stringify({ pr: pr.number, headSha: pr.head.sha, requiredChecks: config.requiredChecks, failed }, null, 2));
+    }
     appendFileSync(process.env.GITHUB_ENV, `TASK_PR=${own[0]?.number ?? ''}\n`);
     console.log('Task, claim, pause controls, PR ownership, and attempt limits verified.');
     return;
@@ -108,6 +124,8 @@ async function main() {
       console.log(`Developer disagreed with blocking review ${input.reviewId}; leaving the reviewed head unchanged for human resolution.`);
     }
   }
+  if (input.mode === 'implementation' && input.expectedHead && pr.head.sha === input.expectedHead)
+    throw new Error('CI repair did not advance the PR head; push a fix or an explicit empty retry commit.');
   const files = await api.pages(`/repos/${input.repository}/pulls/${pr.number}/files`);
   if (files.some(f => [f.filename, f.previous_filename].filter(Boolean).some(p => p.startsWith('control/'))))
     throw new Error('Worker changed protected control files.');
