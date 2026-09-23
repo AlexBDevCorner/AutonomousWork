@@ -99,8 +99,11 @@ re-validated against the current GitHub state.
 Never implement code, change task requirements, change planning state, post
 `/oc`, dispatch a worker directly, bypass branch protection, force-push, or
 mark a task done. REQUEST_CHANGES is consumed by the dispatcher, which performs
-bounded correction dispatch. Only the reconciler marks a task `done` after
-GitHub reports the PR merged.
+bounded correction dispatch and returns an advanced head to review. This
+review/correction cycle repeats until approval, the configured correction-round
+limit is reached, or the developer explicitly records a machine-readable
+technical disagreement for human resolution. Only the reconciler marks a task
+`done` after GitHub reports the PR merged.
 
 ## Scheduled reviewer and merger instruction
 
