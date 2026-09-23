@@ -215,7 +215,7 @@ export function summary(catalog, state, config) {
     '| Project | Task | State | PR | Attempts / review fixes / CI repairs | Last result |', '| --- | --- | --- | --- | --- | --- |'];
   for (const p of catalog.projects) {
     const records = state.executions.filter(e => e.projectId === p.id);
-    if (!records.length) lines.push(`| ${p.id} | none | ${p.enabled && config.projects[p.id] ? 'idle' : 'not enrolled'} | | 0 / 0 | |`);
+    if (!records.length) lines.push(`| ${p.id} | none | ${p.enabled && config.projects[p.id] ? 'idle' : 'not enrolled'} | | 0 / 0 / 0 | |`);
     for (const e of records) lines.push(`| ${p.id} | ${e.taskId} | ${e.status} | ${e.prUrl ? `[#${e.pr}](${e.prUrl})` : ''} | ${e.attempts.length} / ${e.attempts.filter(a => a.kind === 'correction').length} / ${e.attempts.filter(a => a.reason === 'ci_repair').length} | ${e.blockReason ?? latestAttempt(e).conclusion ?? 'pending'} |`);
   }
   return lines.join('\n') + '\n';
