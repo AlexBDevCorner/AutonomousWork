@@ -1,0 +1,7 @@
+<Project>
+  <!--
+    This repository is checked out under target repositories as ./control.
+    Keep an explicit MSBuild props boundary here so projects under control/tools
+    do not inherit Directory.Build.props from the enclosing target repository.
+  -->
+</Project>
