@@ -53,7 +53,13 @@ Before reviewing or merging anything:
    Never manufacture a finding merely to exercise the correction loop.
 4. If the latest trusted completed review for this exact head is already
    APPROVED or CHANGES_REQUESTED, do not submit a duplicate verdict. A changed
-   head requires a fresh review. COMMENTED does not count as a completed verdict.
+   head ALWAYS requires a fresh review, even when the PR still shows an older
+   CHANGES_REQUESTED review. Match reviews to the current head using GitHub's
+   actual review `commit_id`; never infer same-head status merely from review
+   existence, state, or body text. If a normalized connector response omits
+   `commit_id`, fetch the raw GitHub pull-request reviews endpoint before
+   deciding that a completed verdict already exists. COMMENTED does not count
+   as a completed verdict.
 5. Otherwise submit REQUEST_CHANGES when any P0/P1 finding remains. Submit
    APPROVE only when no P0/P1 finding remains and every configured required
    check has completed successfully for this exact head. Missing, pending,
