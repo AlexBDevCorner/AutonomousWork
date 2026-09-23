@@ -298,7 +298,8 @@ test('CI repair loop cap blocks instead of leaving a red PR in review forever', 
 });
 test('trusted current-head review can schedule one bounded correction', () => {
   const f = fixture(); f.catalog.tasks[0].status = 'review'; const e = { ...record(), status: 'review', pr: 1 }; f.state.executions = [e];
-  f.snapshot.prs = [pr()]; f.snapshot.reviews[1] = [{ id: 12, user: { login: 'review-bot' }, commit_id: sha, state: 'CHANGES_REQUESTED', submitted_at: new Date(now).toISOString() }];
+  f.snapshot.prs = [pr()]; f.snapshot.checks[1] = [{ id: 11, name: 'build-and-test', status: 'completed', conclusion: 'success' }];
+  f.snapshot.reviews[1] = [{ id: 12, user: { login: 'review-bot' }, commit_id: sha, state: 'CHANGES_REQUESTED', submitted_at: new Date(now).toISOString() }];
   assert.equal(select(f).kind, 'correction');
   e.attempts.push({ ...e.attempts[0], kind: 'correction', reviewId: 12 }); assert.equal(select(f), null);
 });
@@ -310,6 +311,7 @@ test('correction round cap blocks another fix even on a fresh review', () => {
   const f = fixture(); f.config.maxCorrectionRounds = 1; f.catalog.tasks[0].status = 'review';
   const e = { ...record(), status: 'review', pr: 1 }; e.attempts.push({ ...e.attempts[0], kind: 'correction', reviewId: 5 });
   f.state.executions = [e]; f.snapshot.prs = [pr()];
+  f.snapshot.checks[1] = [{ id: 11, name: 'build-and-test', status: 'completed', conclusion: 'success' }];
   f.snapshot.reviews[1] = [{ id: 12, user: { login: 'review-bot' }, commit_id: sha, state: 'CHANGES_REQUESTED', submitted_at: new Date(now).toISOString() }];
   assert.equal(select(f), null);
 });
