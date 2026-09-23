@@ -35,6 +35,15 @@ export function latestReview(pr, reviews, reviewers) {
     .sort((a, b) => Date.parse(a.submitted_at) - Date.parse(b.submitted_at) || a.id - b.id).at(-1);
 }
 
+export function reviewDisagreement(pr, comments, reviewId, reviewedHead) {
+  const marker = '<!-- autonomous-review-disagreement:v1 -->';
+  const reviewLine = `Review-ID: ${reviewId}`;
+  const headLine = `Reviewed-SHA: ${reviewedHead}`;
+  return comments.filter(c => c.user?.login === pr.user?.login && typeof c.body === 'string' &&
+    c.body.includes(marker) && c.body.includes(reviewLine) && c.body.includes(headLine))
+    .sort((a, b) => Date.parse(a.created_at ?? 0) - Date.parse(b.created_at ?? 0) || a.id - b.id).at(-1);
+}
+
 export function ciGreen(checks, requiredChecks) {
   return requiredChecks.every(name => {
     const latest = checks.filter(c => c.name === name).sort((a, b) => b.id - a.id)[0];
@@ -78,8 +87,12 @@ export function reconcile(execution, snapshot, config, now) {
     }
     if (run.conclusion !== 'success') return block(`worker_${run.conclusion ?? 'failed'}`);
     if (!pr) return block('worker_succeeded_without_pull_request');
-    if (attempt.kind === 'correction' && pr.head.sha === attempt.headSha)
+    if (attempt.kind === 'correction' && pr.head.sha === attempt.headSha) {
+      const disagreement = reviewDisagreement(pr, snapshot.comments?.[pr.number] ?? [], attempt.reviewId, attempt.headSha);
+      if (disagreement) return { ...result, status: 'blocked', blockReason: 'autonomous_review_disagreement',
+        disagreementUrl: disagreement.html_url ?? null };
       return block('correction_did_not_advance_head');
+    }
     return { ...result, status: 'review', blockReason: null };
   }
   // Never resend an uncertain POST. GitHub may have accepted it before the client timed out.
