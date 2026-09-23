@@ -22,4 +22,4 @@ Automatic execution: enabled.
 | repomanager | RM-008 | done | [#28](https://github.com/AlexBDevCorner/RepoManager/pull/28) | 1 / 0 / 0 | success |
 | repomanager | RM-009 | done | [#29](https://github.com/AlexBDevCorner/RepoManager/pull/29) | 2 / 1 / 0 | success |
 | repomanager | RM-010 | done | [#30](https://github.com/AlexBDevCorner/RepoManager/pull/30) | 2 / 1 / 0 | success |
-| repomanager | RM-011 | review | [#31](https://github.com/AlexBDevCorner/RepoManager/pull/31) | 2 / 0 / 1 | success |
+| repomanager | RM-011 | done | [#31](https://github.com/AlexBDevCorner/RepoManager/pull/31) | 2 / 0 / 1 | success |
