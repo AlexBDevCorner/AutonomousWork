@@ -10,7 +10,7 @@ Automatic execution: enabled.
 | mandarinbotnet | MB-004 | done | [#56](https://github.com/AlexBDevCorner/MandarinBotNet/pull/56) | 1 / 0 | success |
 | mandarinbotnet | MB-005 | done | [#58](https://github.com/AlexBDevCorner/MandarinBotNet/pull/58) | 1 / 0 | success |
 | mandarinbotnet | MB-006 | done | [#59](https://github.com/AlexBDevCorner/MandarinBotNet/pull/59) | 1 / 0 | success |
-| mandarinbotnet | MB-007 | in_progress |  | 1 / 0 | pending |
+| mandarinbotnet | MB-007 | review | [#60](https://github.com/AlexBDevCorner/MandarinBotNet/pull/60) | 1 / 0 | success |
 | repomanager | RM-003 | done | [#22](https://github.com/AlexBDevCorner/RepoManager/pull/22) | 4 / 0 | success |
 | repomanager | RM-004 | done | [#23](https://github.com/AlexBDevCorner/RepoManager/pull/23) | 2 / 0 | success |
 | repomanager | RM-005 | done | [#25](https://github.com/AlexBDevCorner/RepoManager/pull/25) | 2 / 0 | success |
