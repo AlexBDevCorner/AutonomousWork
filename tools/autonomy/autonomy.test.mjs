@@ -18,7 +18,7 @@ function fixture() {
   const task = { id: 'RM-001', projectId: project.id, priority: 100, status: 'ready', dependsOn: [], relativePath: 'projects/repomanager/tasks/RM-001.md' };
   const catalog = { projects: [project], tasks: [task] };
   const state = { version: 1, executions: [] };
-  const snapshot = { prs: [], runs: [], reviews: {}, checks: {} };
+  const snapshot = { prs: [], runs: [], reviews: {}, checks: {}, comments: {} };
   const taskTexts = { [task.relativePath]: '---\r\nid: RM-001\r\nstatus: ready\r\npriority: 100\r\ndepends_on: []\r\n---\r\n## Goal\r\nKeep this exact body.\r\nstatus: ready\r\n' };
   const calls = [];
   const api = {
@@ -34,7 +34,7 @@ function record() {
   ] };
 }
 function pr(extra = {}) {
-  return { number: 1, state: 'open', labels: [{ name: 'autonomous' }], head: { ref: 'autonomous/RM-001', sha, repo: { full_name: 'Owner/Repo' } },
+  return { number: 1, state: 'open', labels: [{ name: 'autonomous' }], user: { login: 'worker-bot' }, head: { ref: 'autonomous/RM-001', sha, repo: { full_name: 'Owner/Repo' } },
     base: { ref: 'master' }, html_url: 'https://github.com/Owner/Repo/pull/1', ...extra };
 }
 const completed = extra => ({ id: 8, display_title: runTitle('RM-001', id), status: 'completed', conclusion: 'success',
@@ -153,6 +153,27 @@ test('correction that leaves the PR head unchanged blocks instead of deadlocking
   g.snapshot.runs = [correctionRun()];
   assert.equal(reconcile(correctionRecord(), g.snapshot, f.config, now).status, 'review');
 });
+test('explicit developer disagreement stops the correction loop for human resolution', () => {
+  const correctionId = '00000000-0000-0000-0000-000000000002';
+  const e = record();
+  e.attempts.push({ id: correctionId, kind: 'correction', startedAt: new Date(now - 60000).toISOString(),
+    sourceControlSha: sha, dispatchStatus: 'sent', reviewId: 12, headSha: sha });
+  const f = fixture();
+  f.snapshot.prs = [pr()];
+  f.snapshot.runs = [completed({ display_title: runTitle('RM-001', correctionId) })];
+  f.snapshot.comments[1] = [{
+    id: 99,
+    user: { login: 'worker-bot' },
+    body: '<!-- autonomous-review-disagreement:v1 -->\nReview-ID: 12\nReviewed-SHA: ' + sha + '\nReason: The requested change contradicts the task.',
+    created_at: new Date(now).toISOString(),
+    html_url: 'https://github.com/Owner/Repo/pull/1#issuecomment-99',
+  }];
+  const blocked = reconcile(e, f.snapshot, f.config, now);
+  assert.equal(blocked.status, 'blocked');
+  assert.equal(blocked.blockReason, 'autonomous_review_disagreement');
+  assert.equal(blocked.disagreementUrl, 'https://github.com/Owner/Repo/pull/1#issuecomment-99');
+});
+
 test('missing run waits for propagation then blocks without an automatic resend', () => {
   const f = fixture(); assert.equal(reconcile(record(), f.snapshot, f.config, now).status, 'in_progress');
   assert.equal(reconcile(record(), f.snapshot, f.config, now + 16 * 60000).blockReason, 'dispatch_not_observed');
