@@ -2,7 +2,7 @@ import { appendFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { GitHub } from './github.mjs';
 import { load } from './run.mjs';
-import { autonomousPr, latestAttempt, latestReview, runTitle } from './policy.mjs';
+import { autonomousPr, latestAttempt, latestReview, reviewDisagreement, runTitle } from './policy.mjs';
 
 export function authorize({ catalog, state, config, taskId, taskPath, repository, attemptId, mode, reviewId, expectedHead }) {
   const task = catalog.tasks.find(t => t.id === taskId);
@@ -100,7 +100,13 @@ async function main() {
   const pr = await api.request('GET', `/repos/${input.repository}/pulls/${own[0].number}`);
   if (input.mode === 'correction') {
     if (!input.expectedHead) throw new Error('Correction verification requires the reviewed head SHA.');
-    if (pr.head.sha === input.expectedHead) throw new Error('Correction did not advance the PR head (correction_did_not_advance_head).');
+    if (pr.head.sha === input.expectedHead) {
+      const comments = await api.pages(`/repos/${input.repository}/issues/${pr.number}/comments`);
+      const disagreement = reviewDisagreement(pr, comments, input.reviewId, input.expectedHead);
+      if (!disagreement)
+        throw new Error('Correction did not advance the PR head and did not record an explicit review disagreement (correction_did_not_advance_head).');
+      console.log(`Developer disagreed with blocking review ${input.reviewId}; leaving the reviewed head unchanged for human resolution.`);
+    }
   }
   const files = await api.pages(`/repos/${input.repository}/pulls/${pr.number}/files`);
   if (files.some(f => [f.filename, f.previous_filename].filter(Boolean).some(p => p.startsWith('control/'))))
