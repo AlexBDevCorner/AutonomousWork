@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { chooseWork, chooseRetry, reconcile, replaceStatus, runTitle, latestReview, ciGreen, validateConfig } from './policy.mjs';
+import { chooseWork, chooseRetry, reconcile, replaceStatus, runTitle, latestReview, ciGreen, requiredCiState, validateConfig } from './policy.mjs';
 import { coordinate, validateState } from './coordinator.mjs';
 import { authorize, assertTaskSpecUnchanged } from './worker.mjs';
 import { GitHub } from './github.mjs';
@@ -255,6 +255,46 @@ test('required CI checks must be present and latest rerun must succeed', () => {
   assert.equal(ciGreen([], ['build-and-test']), false);
   assert.equal(ciGreen([{ id: 1, name: 'build-and-test', status: 'completed', conclusion: 'success' },
     { id: 2, name: 'build-and-test', status: 'in_progress' }], ['build-and-test']), false);
+  assert.equal(requiredCiState([{ id: 3, name: 'build-and-test', status: 'completed', conclusion: 'failure' }],
+    ['build-and-test']).state, 'failed');
+});
+test('failed required CI schedules a pinned repair while pending CI waits', () => {
+  const f = fixture(); f.catalog.tasks[0].status = 'review';
+  const e = { ...record(), status: 'review', pr: 1 }; f.state.executions = [e]; f.snapshot.prs = [pr()];
+  f.snapshot.checks[1] = [{ id: 21, name: 'build-and-test', status: 'completed', conclusion: 'failure' }];
+  const selected = select(f);
+  assert.equal(selected.kind, 'implementation');
+  assert.equal(selected.reason, 'ci_repair');
+  assert.equal(selected.headSha, sha);
+  f.snapshot.checks[1] = [{ id: 22, name: 'build-and-test', status: 'in_progress', conclusion: null }];
+  assert.equal(select(f), null);
+});
+test('CI repair is durably claimed against the failed PR head', async () => {
+  const f = fixture(); f.catalog.tasks[0].status = 'review';
+  f.taskTexts[f.catalog.tasks[0].relativePath] = Object.values(f.taskTexts)[0].replace('status: ready', 'status: review');
+  f.state.executions = [{ ...record(), status: 'review', pr: 1 }];
+  f.snapshot.prs = [pr()];
+  f.snapshot.checks[1] = [{ id: 21, name: 'build-and-test', status: 'completed', conclusion: 'failure' }];
+  const result = await coordinate({ ...f, apply: true });
+  const attempt = result.state.executions[0].attempts.at(-1);
+  assert.equal(attempt.reason, 'ci_repair');
+  assert.equal(attempt.headSha, sha);
+  assert.equal(f.calls.find(c => c[0] === 'dispatch')[3].expected_head, sha);
+});
+test('CI repair loop cap blocks instead of leaving a red PR in review forever', async () => {
+  const f = fixture(); f.config.maxCorrectionRounds = 1; f.catalog.tasks[0].status = 'review';
+  f.taskTexts[f.catalog.tasks[0].relativePath] = Object.values(f.taskTexts)[0].replace('status: ready', 'status: review');
+  const repairId = '00000000-0000-0000-0000-000000000002';
+  const e = { ...record(), status: 'review', pr: 1 };
+  e.attempts.push({ id: repairId, kind: 'implementation', reason: 'ci_repair',
+    startedAt: new Date(now - 60000).toISOString(), sourceControlSha: sha, dispatchStatus: 'sent', headSha: 'b'.repeat(40) });
+  f.state.executions = [e];
+  f.snapshot.prs = [pr()];
+  f.snapshot.runs = [completed({ display_title: runTitle('RM-001', repairId) })];
+  f.snapshot.checks[1] = [{ id: 21, name: 'build-and-test', status: 'completed', conclusion: 'failure' }];
+  const result = await coordinate(f);
+  assert.equal(result.state.executions[0].status, 'blocked');
+  assert.equal(result.state.executions[0].blockReason, 'ci_repair_loop_exceeded');
 });
 test('trusted current-head review can schedule one bounded correction', () => {
   const f = fixture(); f.catalog.tasks[0].status = 'review'; const e = { ...record(), status: 'review', pr: 1 }; f.state.executions = [e];
@@ -278,6 +318,13 @@ test('worker refuses a claim exceeding its own correction limit', () => {
   const e = record(); e.attempts = [{ ...e.attempts[0], kind: 'correction' }, { ...e.attempts[0], kind: 'correction' }]; f.state.executions = [e];
   assert.throws(() => authorize({ ...f, taskId: 'RM-001', taskPath: f.catalog.tasks[0].relativePath,
     repository: 'Owner/Repo', mode: 'correction', attemptId: id }));
+});
+test('worker refuses a claim exceeding the CI repair limit', () => {
+  const f = fixture(); f.catalog.tasks[0].status = 'in_progress'; f.config.maxCorrectionRounds = 1;
+  const repair = { ...record().attempts[0], reason: 'ci_repair', headSha: sha };
+  const e = record(); e.attempts = [{ ...repair, id: '00000000-0000-0000-0000-000000000002' }, repair]; f.state.executions = [e];
+  assert.throws(() => authorize({ ...f, taskId: 'RM-001', taskPath: f.catalog.tasks[0].relativePath,
+    repository: 'Owner/Repo', mode: 'implementation', attemptId: id, expectedHead: sha }));
 });
 test('manual worker gate rejects unauthorized task and claimed worker validates attempt', () => {
   const f = fixture(); const input = { ...f, taskId: 'RM-001', taskPath: f.catalog.tasks[0].relativePath, repository: 'Owner/Repo', mode: 'implementation' };
