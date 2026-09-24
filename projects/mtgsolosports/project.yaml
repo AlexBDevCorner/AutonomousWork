@@ -1,0 +1,5 @@
+id: mtgsolosports
+name: MtgSoloSports
+repository: AlexBDevCorner/MtgSoloSports
+enabled: false
+max_active_tasks: 1
