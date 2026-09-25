@@ -1,0 +1,4 @@
+# The database webhook authenticates inside the function using a secret in
+# Supabase Edge Function secrets. It does not send a user JWT.
+[functions.review-bridge-dispatch]
+verify_jwt = false
