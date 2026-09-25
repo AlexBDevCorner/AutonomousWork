@@ -4,7 +4,7 @@ import {
   isUuid, validateRecord, validatePlanning, validateGitHub,
   requiredCheckState, latestTrustedReview, parseControlPin, PROTOCOL_BLOB_SHA,
 } from './guards.mjs';
-import { QueueApi, runDryProcess } from './processor.mjs';
+import { QueueApi, runDryProcess, assertRuntimeEnvironment } from './processor.mjs';
 
 const NOW = Date.parse('2026-09-25T18:00:00Z');
 const ID = '450e0ce5-276f-41ac-9b25-453d1b982dad';
@@ -222,4 +222,17 @@ test('queue API sends only scoped token to Edge function, not DB service_role', 
   assert.ok(seen[0].url.startsWith('https://ayewunekctfmdxgjtqfl.supabase.co/functions/v1/review-bridge-queue'));
   assert.equal(seen[0].init.headers['x-review-bridge-queue-token'], 'q'.repeat(64));
   assert.equal(seen[0].init.headers.apikey, undefined);
+});
+
+test('required runtime credentials and trusted master context are checked before claiming', () => {
+  const env = {
+    QUEUE_ID: ID, GH_TOKEN: 'test-read-only-app-token',
+    REVIEW_BRIDGE_QUEUE_TOKEN: 'x'.repeat(64),
+    GITHUB_REPOSITORY: 'AlexBDevCorner/AutonomousWork',
+    GITHUB_REF: 'refs/heads/master',
+  };
+  assert.doesNotThrow(() => assertRuntimeEnvironment(env));
+  assert.throws(() => assertRuntimeEnvironment({ ...env, GH_TOKEN: '' }), /GH_TOKEN missing/);
+  assert.throws(() => assertRuntimeEnvironment({ ...env, REVIEW_BRIDGE_QUEUE_TOKEN: '' }), /Queue token missing/);
+  assert.throws(() => assertRuntimeEnvironment({ ...env, GITHUB_REF: 'refs/heads/untrusted' }), /default branch/);
 });
