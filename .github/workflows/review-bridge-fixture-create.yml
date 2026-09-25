@@ -17,7 +17,10 @@ on:
         required: true
         type: string
 
-permissions: {}
+# The built-in token needs only enough access to fetch this private control repo.
+# All fixture writes use the separate worker App token obtained after checkout.
+permissions:
+  contents: read
 
 concurrency:
   group: review-bridge-fixture-lifecycle
