@@ -234,13 +234,18 @@ export async function runDryProcess({ queue, github, id, clock = () => Date.now(
   return { outcome: 'evaluated', ...decision };
 }
 
-async function main() {
-  const id = process.env.QUEUE_ID;
-  if (!isUuid(id)) throw new Error('QUEUE_ID must be one UUID');
-  if (!process.env.GH_TOKEN) throw new Error('GH_TOKEN missing; no claim attempted');
-  if (!process.env.REVIEW_BRIDGE_QUEUE_TOKEN) throw new Error('Queue token missing; no claim attempted');
-  if (process.env.GITHUB_REPOSITORY !== CONTROL || process.env.GITHUB_REF !== 'refs/heads/master')
+export function assertRuntimeEnvironment(env) {
+  if (!isUuid(env.QUEUE_ID)) throw new Error('QUEUE_ID must be one UUID');
+  if (!env.GH_TOKEN) throw new Error('GH_TOKEN missing; no claim attempted');
+  if (!env.REVIEW_BRIDGE_QUEUE_TOKEN || env.REVIEW_BRIDGE_QUEUE_TOKEN.length < 32)
+    throw new Error('Queue token missing or too short; no claim attempted');
+  if (env.GITHUB_REPOSITORY !== CONTROL || env.GITHUB_REF !== 'refs/heads/master')
     throw new Error('Bridge must run on the control default branch');
+}
+
+async function main() {
+  assertRuntimeEnvironment(process.env);
+  const id = process.env.QUEUE_ID;
   const queue = new QueueApi(process.env.REVIEW_BRIDGE_QUEUE_TOKEN);
   const github = new GitHub(process.env.GH_TOKEN);
   const outcome = await runDryProcess({ queue, github, id });
