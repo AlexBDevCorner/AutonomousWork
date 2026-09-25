@@ -1,0 +1,60 @@
+name: Step 4 controlled fixture review (operator only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Number of the disposable, worker-App-authored PR"
+        required: true
+        type: string
+      expected_sha:
+        description: "Exact 40-character current fixture HEAD SHA"
+        required: true
+        type: string
+      event:
+        description: "Inspect first, then request changes for broken fixture, approve only after correction"
+        required: true
+        type: choice
+        options: [VERIFY_ONLY, REQUEST_CHANGES, APPROVE]
+      confirmation:
+        description: "For real review use STEP4_FIXTURE_ONLY. Leave empty for VERIFY_ONLY."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: read
+
+concurrency:
+  group: review-bridge-fixture-review-${{ inputs.pr_number }}
+  cancel-in-progress: false
+
+jobs:
+  fixture-review:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      FIXTURE_PR: ${{ inputs.pr_number }}
+      FIXTURE_SHA: ${{ inputs.expected_sha }}
+      FIXTURE_EVENT: ${{ inputs.event }}
+      FIXTURE_CONFIRM: ${{ inputs.confirmation }}
+      REVIEW_BRIDGE_FIXTURE_WRITE_ENABLED: ${{ vars.REVIEW_BRIDGE_FIXTURE_WRITE_ENABLED }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: master
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run fixture review write-path tests without credentials
+        run: node --test tools/review-bridge/*.test.mjs
+      - name: Verify current reviewer identity, recheck guards, optionally submit EXACT head review
+        env:
+          READ_ONLY_GITHUB_TOKEN: ${{ github.token }}
+          # Distinct from the dispatcher/worker GitHub App. Used only in this
+          # manually dispatched job, never in generic repository_dispatch.
+          REVIEW_BRIDGE_REVIEWER_TOKEN: ${{ secrets.REVIEW_BRIDGE_REVIEWER_TOKEN }}
+        run: node tools/review-bridge/review-write.mjs
