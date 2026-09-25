@@ -15,16 +15,19 @@ const SHA = /^[a-f0-9]{40}$/;
 const SAFE_REASON = /^[a-z0-9_]+$/;
 
 export class QueueApi {
-  constructor(token, fetcher = fetch) {
+  constructor(token, fetcher = fetch, mode = "test") {
     if (!token || token.length < 32)
       throw new Error('REVIEW_BRIDGE_QUEUE_TOKEN missing or too short');
     this.token = token;
     this.fetcher = fetcher;
+    if (!["test","pilot"].includes(mode)) throw new Error("Unknown queue mode");
+    this.mode = mode;
   }
   async request(method, id, data) {
     if (!isUuid(id)) throw new Error('Invalid queue UUID');
     const url = new URL(EDGE);
     if (method === 'GET') url.searchParams.set('id', id);
+    if (method === 'GET' && this.mode === "pilot") url.searchParams.set("mode", "pilot");
     const response = await this.fetcher(url, {
       method,
       redirect: 'error',
@@ -33,7 +36,7 @@ export class QueueApi {
         Accept: 'application/json',
         ...(method === 'POST' ? { 'Content-Type': 'application/json' } : {}),
       },
-      ...(method === 'POST' ? { body: JSON.stringify({ id, ...data }) } : {}),
+      ...(method === 'POST' ? { body: JSON.stringify({ id, ...(this.mode === 'pilot' ? { mode: 'pilot' } : {}), ...data }) } : {}),
       signal: AbortSignal.timeout(20000),
     });
     if (method === 'GET' && response.status === 404) return null;
@@ -54,13 +57,19 @@ export class QueueApi {
     return response.claimed ? response.row : null;
   }
   async finish(id, token, verdict) {
-    if (!isUuid(token) || !['dry_run','withheld','stale','failed','retryable'].includes(verdict.status) ||
+    const statuses = this.mode === 'pilot'
+      ? ['applied','withheld','stale','failed','retryable']
+      : ['dry_run','withheld','stale','failed','retryable'];
+    if (!isUuid(token) || !statuses.includes(verdict.status) ||
         !SAFE_REASON.test(verdict.reason ?? '') || !verdict.evidence || typeof verdict.evidence !== 'object') {
       throw new Error('Invalid lease completion');
     }
     const body = {
       action: 'finish', claim_token: token, status: verdict.status,
       reason: verdict.reason, evidence: verdict.evidence,
+      ...(this.mode === 'pilot' ? {
+        review_id: verdict.review_id ?? null, merge_sha: verdict.merge_sha ?? null,
+      } : {}),
     };
     const reply = await this.request('POST', id, body);
     if (reply?.finished !== true) throw new Error('Queue did not acknowledge lease completion');
@@ -113,8 +122,8 @@ export async function controlSnapshot(api, row) {
   };
 }
 
-export async function evaluate({ api, row, now = Date.now() }) {
-  const invalid = validateRecord(row, row.id, now);
+export async function evaluate({ api, row, now = Date.now(), pilot = false }) {
+  const invalid = validateRecord(row, row.id, now, pilot);
   if (invalid) return reason('withheld', invalid);
   if (row.status !== 'processing') return reason('failed', 'unclaimed_record');
 
