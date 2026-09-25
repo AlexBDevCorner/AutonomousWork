@@ -51,7 +51,7 @@ const evaluator=async ({row})=>({
 function queueMock(row) {
   const finishes=[];return {
     finishes,
-    get:async ()=>row,
+    get:async ()=>({...row,status:'queued',lease_until:null}),
     claim:async ()=>row,
     finish:async (...args)=>{finishes.push(args);},
   };
