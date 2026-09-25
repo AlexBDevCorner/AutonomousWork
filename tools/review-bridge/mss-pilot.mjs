@@ -192,7 +192,7 @@ export async function runPilot({queue,api,reviewerToken,mergeToken,id,
       mergeSha=previous.mergeSha;
     }
     const before=report ? null : await evaluator({api,row,now:clock(),pilot:true});
-    report=before;
+    if(before) report=before;
     if(before?.status==='dry_run'&&before.reason==='review_guards_passed_no_mutation' &&
        ['APPROVE','REQUEST_CHANGES'].includes(row.verdict)) {
       // Repeat the complete deterministic check immediately before POST.
