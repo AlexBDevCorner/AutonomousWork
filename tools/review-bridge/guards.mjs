@@ -14,10 +14,14 @@ const lower = x => String(x ?? '').toLowerCase();
 export const isUuid = x => typeof x === 'string' && UUID.test(x);
 export const terminal = value => TERMINAL.has(value);
 
-export function validateRecord(row, id, now = Date.now()) {
+export function validateRecord(row, id, now = Date.now(), pilot = false) {
   if (!row || row.id !== id || !isUuid(id)) return 'invalid_or_mismatched_queue_id';
   if (row.schema_version !== 1 || row.source !== 'chatgpt-scheduled') return 'unknown_queue_schema_or_source';
-  if (row.test_only !== true) return 'production_verdicts_not_enabled';
+  if (pilot) {
+    if (row.test_only !== false || row.repository !== 'AlexBDevCorner/MtgSoloSports' ||
+        row.project_id !== 'mtgsolosports')
+      return 'outside_mss_pilot_scope';
+  } else if (row.test_only !== true) return 'production_verdicts_not_enabled';
   if (!['queued', 'processing', 'retryable', ...TERMINAL].includes(row.status)) return 'invalid_queue_status';
   if (!word(row.repository) || !/^AlexBDevCorner\/[A-Za-z0-9_.-]+$/.test(row.repository) ||
       !word(row.project_id) || !/^[a-z0-9-]+$/.test(row.project_id) ||

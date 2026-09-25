@@ -1,14 +1,20 @@
-name: Supabase review delivery (dry run)
+name: Supabase review delivery (dry run + isolated MSS live pilot)
 
 on:
   repository_dispatch:
-    types: [autonomous_review_inserted]
+    types: [autonomous_review_inserted, autonomous_review_mss_pilot_inserted]
   workflow_dispatch:
     inputs:
       queue_id:
         description: "Existing Supabase queue UUID to inspect or recover"
         required: true
         type: string
+      mode:
+        description: "test = existing Step 3, pilot = live MtgSoloSports only"
+        type: choice
+        required: true
+        default: test
+        options: [test, pilot]
 
 permissions:
   contents: read
@@ -21,7 +27,7 @@ jobs:
   # Keep the successful Step 2 path alive until the operator installs the
   # queue-scoped token and explicitly opts into Step 3.
   delivery-only:
-    if: github.ref == 'refs/heads/master' && vars.REVIEW_BRIDGE_STEP3_ENABLED != 'true'
+    if: github.ref == 'refs/heads/master' && vars.REVIEW_BRIDGE_STEP3_ENABLED != 'true' && github.event.action != 'autonomous_review_mss_pilot_inserted' && inputs.mode != 'pilot'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -44,7 +50,7 @@ jobs:
   # This mode is intentionally mandatory dry-run. NO PR write permissions,
   # NO checkout of untrusted PR-head code and NO Supabase admin key in GitHub.
   deterministic-dry-run:
-    if: github.ref == 'refs/heads/master' && vars.REVIEW_BRIDGE_STEP3_ENABLED == 'true'
+    if: github.ref == 'refs/heads/master' && vars.REVIEW_BRIDGE_STEP3_ENABLED == 'true' && github.event.action != 'autonomous_review_mss_pilot_inserted' && inputs.mode != 'pilot'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -79,3 +85,56 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           REVIEW_BRIDGE_QUEUE_TOKEN: ${{ secrets.REVIEW_BRIDGE_QUEUE_TOKEN }}
         run: node tools/review-bridge/processor.mjs
+
+  # Real reviews only for MtgSoloSports with explicit opt-in.
+  mss-live-pilot:
+    if: >-
+      github.ref == 'refs/heads/master' &&
+      vars.REVIEW_BRIDGE_STEP3_ENABLED == 'true' &&
+      vars.REVIEW_BRIDGE_MSS_PILOT_ENABLED == 'true' &&
+      (github.event.action == 'autonomous_review_mss_pilot_inserted' || inputs.mode == 'pilot')
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      QUEUE_ID: ${{ github.event.client_payload.queue_id || inputs.queue_id }}
+      REVIEW_BRIDGE_MSS_PILOT_ENABLED: ${{ vars.REVIEW_BRIDGE_MSS_PILOT_ENABLED }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: master
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run bridge guard and pilot write tests
+        run: node --test tools/review-bridge/*.test.mjs
+      - name: Obtain cross-repo READ-ONLY worker App token
+        id: read-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.AUTONOMOUS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTONOMOUS_APP_PRIVATE_KEY }}
+          owner: AlexBDevCorner
+          repositories: |
+            AutonomousWork
+            MtgSoloSports
+          permission-contents: read
+          permission-pull-requests: read
+          permission-checks: read
+      - name: Obtain MtgSoloSports-only MERGE worker App token
+        id: merge-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.AUTONOMOUS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTONOMOUS_APP_PRIVATE_KEY }}
+          owner: AlexBDevCorner
+          repositories: MtgSoloSports
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Apply real review verdict and guarded merge for MSS only
+        env:
+          READ_GH_TOKEN: ${{ steps.read-token.outputs.token }}
+          MERGE_GH_TOKEN: ${{ steps.merge-token.outputs.token }}
+          REVIEW_BRIDGE_QUEUE_TOKEN: ${{ secrets.REVIEW_BRIDGE_QUEUE_TOKEN }}
+          REVIEW_BRIDGE_PILOT_REVIEWER_TOKEN: ${{ secrets.REVIEW_BRIDGE_PILOT_REVIEWER_TOKEN }}
+        run: node tools/review-bridge/mss-pilot.mjs
