@@ -11,6 +11,10 @@
     "mandarinbotnet": {
       "branch": "main",
       "workflow": "autonomous-worker.yml"
+    },
+    "mtgsolosports": {
+      "branch": "main",
+      "workflow": "autonomous-worker.yml"
     }
   },
   "maxAttempts": 5,
