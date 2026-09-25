@@ -1,0 +1,39 @@
+name: Supabase review delivery (dry run)
+
+on:
+  repository_dispatch:
+    types: [autonomous_review_inserted]
+  workflow_dispatch:
+    inputs:
+      queue_id:
+        description: "Existing Supabase queue UUID to acknowledge (operator recovery)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: review-bridge-${{ github.event.client_payload.queue_id || inputs.queue_id }}
+  cancel-in-progress: false
+
+jobs:
+  acknowledge:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      QUEUE_ID: ${{ github.event.client_payload.queue_id || inputs.queue_id }}
+      SUPABASE_URL: https://ayewunekctfmdxgjtqfl.supabase.co
+      SUPABASE_REVIEW_BRIDGE_KEY: ${{ secrets.SUPABASE_REVIEW_BRIDGE_KEY }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test dry-run delivery logic
+        run: node --test tools/review-bridge/*.test.mjs
+      - name: Fetch and acknowledge exact queue UUID
+        run: node tools/review-bridge/delivery.mjs
