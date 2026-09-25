@@ -110,8 +110,10 @@ Deno.serve(async (request: Request): Promise<Response> => {
         typeof value.claim_token === "string" && UUID.test(value.claim_token) &&
         typeof value.status === "string" && (pilot ? PILOT_FINISH : FINISH).has(value.status) &&
         (pilot || (value.review_id === undefined && value.merge_sha === undefined)) &&
-        (value.review_id === undefined || Number.isSafeInteger(value.review_id) && (value.review_id as number) > 0) &&
-        (value.merge_sha === undefined || typeof value.merge_sha === "string" && /^[a-f0-9]{40}$/.test(value.merge_sha)) &&
+        (value.review_id === undefined || value.review_id === null ||
+          Number.isSafeInteger(value.review_id) && (value.review_id as number) > 0) &&
+        (value.merge_sha === undefined || value.merge_sha === null ||
+          typeof value.merge_sha === "string" && /^[a-f0-9]{40}$/.test(value.merge_sha)) &&
         (value.reason === null || typeof value.reason === "string" && value.reason.length <= 500) &&
         object(value.evidence) && JSON.stringify(value.evidence).length <= 4096) {
       result = await postgres(pilot ? "rpc/review_bridge_finish_mss_pilot_queue" :
