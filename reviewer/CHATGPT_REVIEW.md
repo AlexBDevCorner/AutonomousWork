@@ -57,9 +57,12 @@ Before reviewing or merging anything:
    CHANGES_REQUESTED review. Match reviews to the current head using GitHub's
    actual review `commit_id`; never infer same-head status merely from review
    existence, state, or body text. If a normalized connector response omits
-   `commit_id`, fetch the raw GitHub pull-request reviews endpoint before
-   deciding that a completed verdict already exists. COMMENTED does not count
-   as a completed verdict.
+   `commit_id`, MUST use the generic GitHub GET/fetch capability against
+   `https://api.github.com/repos/<owner>/<repo>/pulls/<pr>/reviews` and read the
+   raw review object's `commit_id` before deciding that a completed verdict
+   already exists. Do not conclude that the fallback capability is unavailable
+   until that exact endpoint has actually been attempted and returned an error.
+   COMMENTED does not count as a completed verdict.
 5. Otherwise submit REQUEST_CHANGES when any P0/P1 finding remains. Submit
    APPROVE only when no P0/P1 finding remains and every configured required
    check has completed successfully for this exact head. Missing, pending,
@@ -100,7 +103,9 @@ inspection.
 
 A trusted approval from an earlier scheduled run may be merged on a later run
 without submitting a duplicate review, provided every merge guard above is
-re-validated against the current GitHub state.
+re-validated against the current GitHub state. If a normalized review-list
+response omits `commit_id`, use the same raw reviews REST fallback described in
+the Review section before withholding a merge.
 
 Never implement code, change task requirements, change planning state, post
 `/oc`, dispatch a worker directly, bypass branch protection, force-push, or
@@ -138,4 +143,9 @@ from master on every run rather than relying on a copied stale protocol.
 > not merge. Never implement code, edit planning/task state, dispatch workers,
 > post worker commands, or mark tasks done. Stay quiet when nothing is actionable.
 > Report an authentication or missing write-capability problem as a setup failure
-> rather than claiming a review or merge occurred.
+> rather than claiming a review or merge occurred. If normalized review data omits
+> `commit_id`, use the generic GitHub GET/fetch capability on
+> `https://api.github.com/repos/<owner>/<repo>/pulls/<pr>/reviews` before declaring
+> the review unverifiable. Never disable the scheduled reviewer because of a
+> tool-discovery, authentication, permission, rate-limit, transient connector, or
+> guard failure; leave it enabled and report the exact blocker so a later pass can retry.
