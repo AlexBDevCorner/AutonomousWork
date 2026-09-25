@@ -6,7 +6,7 @@ import {
   assertFixtureRuntime, controlledReview,
 } from './review-write.mjs';
 import { verifyFixture } from './fixture-verify.mjs';
-import { verifyMakerInputs } from './fixture-maker.mjs';
+import { verifyMakerInputs, operate } from './fixture-maker.mjs';
 
 const SHA = 'a'.repeat(40), OLD = 'b'.repeat(40);
 const broken = 'fixture_id: step4\nfixture_status: broken\n';
@@ -183,4 +183,93 @@ test('fixture branch lifecycle requires explicit isolated create/repair confirma
   assert.doesNotThrow(() => verifyMakerInputs({ phase: 'repair', confirmation: 'REPAIR_STEP4_FIXTURE', existingPr: 45 }));
   assert.throws(() => verifyMakerInputs({ phase: 'repair', confirmation: 'REPAIR_STEP4_FIXTURE' }), /existing fixture/);
   assert.throws(() => verifyMakerInputs({ phase: 'create', confirmation: 'wrong' }), /confirmation/);
+});
+
+test('complete simulated broken-fixture review rereads all guards and verifies raw commit_id', async () => {
+  const repoPrefix = '/repos/' + REPO;
+  const contents = value => ({
+    encoding: 'base64', sha: SHA, size: value.length,
+    content: Buffer.from(value).toString('base64'),
+  });
+  let requests = 0, posts = 0;
+  let confirmed = [];
+  const api = {
+    request: async (_method, path) => {
+      requests++;
+      if (path.endsWith('/git/ref/heads/master')) return { object: { sha: SHA } };
+      if (path.includes('/contents/automation/config.json')) return contents(JSON.stringify(config()));
+      if (path.endsWith('/pulls/45')) return pr();
+      if (path.includes('/contents/' + FILE)) return contents(broken);
+      throw new Error('Unexpected request ' + path);
+    },
+    pages: async path => {
+      if (path === repoPrefix + '/pulls/45/files') return [{ filename: FILE, status: 'added' }];
+      if (path.includes('/check-runs')) return checks();
+      if (path.includes('/reviews')) return confirmed;
+      throw new Error('Unexpected pages ' + path);
+    },
+  };
+  const result = await controlledReview({
+    readApi: api, reviewerToken: 'dedicated-reviewer',
+    reviewerLogin: 'AlexBDevCorner', number: 45, sha: SHA, event: 'REQUEST_CHANGES',
+    enabled: true, confirm: 'STEP4_FIXTURE_ONLY',
+    fetcher: async (_url, req) => {
+      posts++;
+      const body = JSON.parse(req.body);
+      assert.equal(body.commit_id, SHA);
+      assert.equal(body.event, 'REQUEST_CHANGES');
+      confirmed = [review({ id: 79 })];
+      return { ok: true, status: 200, json: async () => confirmed[0] };
+    },
+  });
+  assert.deepEqual(result, { outcome: 'submitted', id: 79, state: 'CHANGES_REQUESTED', sha: SHA });
+  assert.equal(posts, 1);
+  assert.ok(requests >= 8); // two full inspections, final head check
+  const duplicate = await controlledReview({
+    readApi: api, reviewerToken: 'dedicated-reviewer',
+    reviewerLogin: 'AlexBDevCorner', number: 45, sha: SHA, event: 'REQUEST_CHANGES',
+    enabled: true, confirm: 'STEP4_FIXTURE_ONLY',
+    fetcher: async () => { throw new Error('Must not POST duplicate'); },
+  });
+  assert.equal(duplicate.outcome, 'already_reviewed');
+});
+
+test('control master changing between inspections stops the POST', async () => {
+  let masterGets = 0, posts = 0;
+  const contents = value => ({
+    encoding: 'base64', sha: SHA, size: value.length,
+    content: Buffer.from(value).toString('base64'),
+  });
+  const api = {
+    request: async (_method, path) => {
+      if (path.endsWith('/git/ref/heads/master'))
+        return { object: { sha: ++masterGets === 1 ? SHA : OLD } };
+      if (path.includes('/contents/automation/config.json')) return contents(JSON.stringify(config()));
+      if (path.endsWith('/pulls/45')) return pr();
+      if (path.includes('/contents/' + FILE)) return contents(broken);
+      throw new Error('Unexpected ' + path);
+    },
+    pages: async path => {
+      if (path.endsWith('/files')) return [{ filename: FILE, status: 'added' }];
+      if (path.includes('/check-runs')) return checks();
+      if (path.endsWith('/reviews')) return [];
+      throw new Error('Unexpected ' + path);
+    },
+  };
+  await assert.rejects(controlledReview({
+    readApi: api, reviewerToken: 'dedicated-reviewer',
+    reviewerLogin: 'AlexBDevCorner', number: 45, sha: SHA, event: 'REQUEST_CHANGES',
+    enabled: true, confirm: 'STEP4_FIXTURE_ONLY',
+    fetcher: async () => { posts++; return {}; },
+  }), /master changed/);
+  assert.equal(posts, 0);
+});
+
+test('operator fixture creator never silently creates a second PR', async () => {
+  const api = {
+    pages: async () => [{ number: 45, state: 'open' }],
+    request: async () => { throw new Error('No GitHub writes allowed'); },
+  };
+  await assert.rejects(operate({ api, phase: 'create', confirmation: 'CREATE_STEP4_FIXTURE' }),
+    /already exists/);
 });
