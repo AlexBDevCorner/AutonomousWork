@@ -48,6 +48,7 @@ jobs:
             AutonomousWork
             RepoManager
             MandarinBotNet
+            MtgSoloSports
           permission-contents: write
           permission-actions: write
           permission-pull-requests: read
