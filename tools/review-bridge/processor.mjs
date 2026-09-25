@@ -85,20 +85,29 @@ export async function controlSnapshot(api, row) {
   if (!SHA.test(sha ?? '')) throw new Error('Unable to read control master head');
   const base = '/repos/' + CONTROL + '/contents/';
   const get = p => api.request('GET', base + p + '?ref=' + sha);
+  // Missing project/task files are deterministic "not enrolled" evidence,
+  // not transient network failures. Avoid exhausting retry attempts on 404.
+  const getOptional = async path => {
+    try { return await get(path); }
+    catch (error) {
+      if (String(error.message).includes('HTTP 404')) return null;
+      throw error;
+    }
+  };
   const [conf, state, project, task, protocol] = await Promise.all([
     get('automation/config.json'),
     get('automation/state.json'),
-    get('projects/' + row.project_id + '/project.yaml'),
-    get(taskPath(row)),
+    getOptional('projects/' + row.project_id + '/project.yaml'),
+    getOptional(taskPath(row)),
     get('reviewer/CHATGPT_REVIEW.md'),
   ]);
   return {
     sha,
     config: JSON.parse(decodeFile(conf)),
     state: JSON.parse(decodeFile(state)),
-    projectText: decodeFile(project),
-    taskText: decodeFile(task),
-    taskBlobSha: task.sha,
+    projectText: project ? decodeFile(project) : null,
+    taskText: task ? decodeFile(task) : null,
+    taskBlobSha: task?.sha ?? null,
     protocolSha: protocol.sha,
     protocolText: decodeFile(protocol),
   };
@@ -130,9 +139,14 @@ export async function evaluate({ api, row, now = Date.now() }) {
   const pin = parseControlPin(pr.body, control.config.controlRepository);
   let pinMatches = null;
   if (pin.present && pin.valid && pin.path === planning.path) {
-    const pinned = await api.request('GET', '/repos/' + CONTROL +
-      '/contents/' + pin.path + '?ref=' + pin.sha);
-    pinMatches = pinned?.sha === control.taskBlobSha;
+    try {
+      const pinned = await api.request('GET', '/repos/' + CONTROL +
+        '/contents/' + pin.path + '?ref=' + pin.sha);
+      pinMatches = pinned?.sha === control.taskBlobSha;
+    } catch (error) {
+      if (!String(error.message).includes('HTTP 404')) throw error;
+      pinMatches = false;
+    }
   }
   // The review protocol requires AGENTS.md at the target PR base. The
   // deterministic processor verifies it can read this context; it does not
