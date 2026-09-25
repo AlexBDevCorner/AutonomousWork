@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       queue_id:
-        description: "Existing Supabase queue UUID to acknowledge (operator recovery)"
+        description: "Existing Supabase queue UUID to inspect or recover"
         required: true
         type: string
 
@@ -18,14 +18,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  acknowledge:
-    if: github.ref == 'refs/heads/master'
+  # Keep the successful Step 2 path alive until the operator installs the
+  # queue-scoped token and explicitly opts into Step 3.
+  delivery-only:
+    if: github.ref == 'refs/heads/master' && vars.REVIEW_BRIDGE_STEP3_ENABLED != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
       QUEUE_ID: ${{ github.event.client_payload.queue_id || inputs.queue_id }}
       SUPABASE_URL: https://ayewunekctfmdxgjtqfl.supabase.co
-      SUPABASE_REVIEW_BRIDGE_KEY: ${{ secrets.SUPABASE_REVIEW_BRIDGE_KEY }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -33,7 +34,48 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Test dry-run delivery logic
+      - name: Test delivery logic
         run: node --test tools/review-bridge/*.test.mjs
-      - name: Fetch and acknowledge exact queue UUID
+      - name: Step 2 test-only acknowledgement
+        env:
+          SUPABASE_REVIEW_BRIDGE_KEY: ${{ secrets.SUPABASE_REVIEW_BRIDGE_KEY }}
         run: node tools/review-bridge/delivery.mjs
+
+  # This mode is intentionally mandatory dry-run. NO PR write permissions,
+  # NO checkout of untrusted PR-head code and NO Supabase admin key in GitHub.
+  deterministic-dry-run:
+    if: github.ref == 'refs/heads/master' && vars.REVIEW_BRIDGE_STEP3_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      QUEUE_ID: ${{ github.event.client_payload.queue_id || inputs.queue_id }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: master
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test deterministic review guards and queue claims
+        run: node --test tools/review-bridge/*.test.mjs
+      - name: Create read-only GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.AUTONOMOUS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTONOMOUS_APP_PRIVATE_KEY }}
+          owner: AlexBDevCorner
+          repositories: |
+            AutonomousWork
+            RepoManager
+            MandarinBotNet
+            MtgSoloSports
+          permission-contents: read
+          permission-pull-requests: read
+          permission-checks: read
+      - name: Validate current master and exact GitHub head, record result
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REVIEW_BRIDGE_QUEUE_TOKEN: ${{ secrets.REVIEW_BRIDGE_QUEUE_TOKEN }}
+        run: node tools/review-bridge/processor.mjs
