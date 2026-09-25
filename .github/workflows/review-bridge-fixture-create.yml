@@ -1,0 +1,58 @@
+name: Step 4 disposable fixture PR (operator only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: "Create a deliberately broken fixture or repair an already reviewed one"
+        required: true
+        type: choice
+        options: [create, repair]
+      pr_number:
+        description: "For repair only: existing disposable fixture PR number"
+        required: false
+        type: string
+      confirmation:
+        description: "CREATE_STEP4_FIXTURE or REPAIR_STEP4_FIXTURE"
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: review-bridge-fixture-lifecycle
+  cancel-in-progress: false
+
+jobs:
+  fixture:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      FIXTURE_PHASE: ${{ inputs.phase }}
+      FIXTURE_PR: ${{ inputs.pr_number }}
+      FIXTURE_CONFIRM: ${{ inputs.confirmation }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: master
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test fixture control code
+        run: node --test tools/review-bridge/*.test.mjs
+      - name: Obtain isolated worker App token for fixture creation/repair
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.AUTONOMOUS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTONOMOUS_APP_PRIVATE_KEY }}
+          owner: AlexBDevCorner
+          repositories: AutonomousWork
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Create or repair one disposable fixture PR
+        env:
+          FIXTURE_WORKER_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: node tools/review-bridge/fixture-maker.mjs
