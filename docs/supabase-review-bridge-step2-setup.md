@@ -38,9 +38,11 @@ permission. Both the Edge Function and the workflow reject
 ## Database setup
 
 The project initially had Vault installed but **pg_net not enabled**.
-`supabase/review-bridge/prepare.sql` enables pg_net and creates a
-non-public, security-definer trigger function. Apply it once and verify
-its migration history when managing the project's migrations. Unlike
+`supabase/migrations/20260925153501_review_bridge_delivery_preparation.sql` enables pg_net and creates a
+non-public, security-definer trigger function. It was applied to the existing project as migration `20260925153501` and is
+now tracked verbatim alongside the two earlier existing migrations.
+Do **not** replay migrations that are already recorded in this project.
+For fresh environments, apply them in normal version order. Unlike
 the existing queue table migration, it does not recreate the queue.
 
 The trigger intentionally stays **inactive** until all credentials and
