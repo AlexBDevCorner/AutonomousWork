@@ -140,11 +140,37 @@ export async function alreadyReviewed({api,row}) {
     api.pages(API+'/pulls/'+row.pr_number+'/reviews'),
   ]);
   const want=row.verdict==='APPROVE'?'APPROVED':'CHANGES_REQUESTED';
-  const valid=reviews.filter(r=>r.user?.login==='AlexBDevCorner'&&
-    r.commit_id===row.reviewed_sha&&r.state===want&&Number.isSafeInteger(r.id));
-  if(!valid.length)return null;
-  valid.sort((a,b)=>a.id-b.id);
-  return {pr,reviewId:valid.at(-1).id};
+  const trusted=reviews.filter(r=>r.user?.login==='AlexBDevCorner'&&
+    r.commit_id===row.reviewed_sha&&
+    ['APPROVED','CHANGES_REQUESTED'].includes(r.state)&&
+    Number.isSafeInteger(r.id)&&Number.isFinite(Date.parse(r.submitted_at)));
+  trusted.sort((a,b)=>Date.parse(a.submitted_at)-Date.parse(b.submitted_at) || a.id-b.id);
+  const latest=trusted.at(-1);
+  if(!latest || latest.state!==want || pr?.head?.sha!==row.reviewed_sha)
+    return null;
+  return {pr,reviewId:latest.id};
+}
+// Idempotent recovery after GitHub accepted a merge but the worker lost the
+// database acknowledgement. No second merge request is sent.
+export async function alreadyMerged({api,row}) {
+  if(!['APPROVE','MERGE_CHECK'].includes(row.verdict)) return null;
+  const [pr,reviews]=await Promise.all([
+    api.request('GET',API+'/pulls/'+row.pr_number),
+    api.pages(API+'/pulls/'+row.pr_number+'/reviews'),
+  ]);
+  if(pr?.state!=='closed'||pr.merged!==true||!SHA.test(pr.merge_commit_sha??'')||
+     pr.head?.sha!==row.reviewed_sha||pr.head?.ref!=='autonomous/'+row.task_id||
+     pr.head?.repo?.full_name!==PILOT_REPO||
+     pr.base?.repo?.full_name!==PILOT_REPO||pr.base?.ref!=='main'||
+     pr.user?.login==='AlexBDevCorner')return null;
+  const trusted=reviews.filter(r=>r.user?.login==='AlexBDevCorner'&&
+    r.commit_id===row.reviewed_sha&&
+    ['APPROVED','CHANGES_REQUESTED'].includes(r.state)&&
+    Number.isSafeInteger(r.id)&&Number.isFinite(Date.parse(r.submitted_at)));
+  trusted.sort((a,b)=>Date.parse(a.submitted_at)-Date.parse(b.submitted_at)||a.id-b.id);
+  const latest=trusted.at(-1);
+  if(latest?.state!=='APPROVED')return null;
+  return {mergeSha:pr.merge_commit_sha,reviewId:latest.id};
 }
 export async function runPilot({queue,api,reviewerToken,mergeToken,id,
   clock=()=>Date.now(),fetcher=fetch,evaluator=evaluate}) {
@@ -159,9 +185,15 @@ export async function runPilot({queue,api,reviewerToken,mergeToken,id,
   verifyClaim(row,id,clock);
   let report, reviewId=null, mergeSha=null;
   try {
-    const before=await evaluator({api,row,now:clock(),pilot:true});
+    const previous=await alreadyMerged({api,row});
+    if(previous) {
+      report=result('applied','previous_merge_confirmed',{reviewed_sha:row.reviewed_sha});
+      reviewId=previous.reviewId;
+      mergeSha=previous.mergeSha;
+    }
+    const before=report ? null : await evaluator({api,row,now:clock(),pilot:true});
     report=before;
-    if(before.status==='dry_run'&&before.reason==='review_guards_passed_no_mutation' &&
+    if(before?.status==='dry_run'&&before.reason==='review_guards_passed_no_mutation' &&
        ['APPROVE','REQUEST_CHANGES'].includes(row.verdict)) {
       // Repeat the complete deterministic check immediately before POST.
       const fresh=await evaluator({api,row,now:clock(),pilot:true});
@@ -171,7 +203,7 @@ export async function runPilot({queue,api,reviewerToken,mergeToken,id,
         report=result('applied','review_posted',{reviewed_sha:row.reviewed_sha}, {review_id:reviewId});
       } else report=fresh;
     }
-    if(before.status==='withheld'&&before.reason==='trusted_same_head_verdict_exists'&&
+    if(before?.status==='withheld'&&before.reason==='trusted_same_head_verdict_exists'&&
        ['APPROVE','REQUEST_CHANGES'].includes(row.verdict)) {
       // POST may have succeeded on a prior attempt whose acknowledgement failed.
       // Re-read the raw review and resume; never blindly POST a duplicate.
@@ -182,7 +214,7 @@ export async function runPilot({queue,api,reviewerToken,mergeToken,id,
           {review_id:reviewId});
       }
     }
-    if((row.verdict==='MERGE_CHECK'&&before.status==='dry_run'&&
+    if((row.verdict==='MERGE_CHECK'&&before?.status==='dry_run'&&
         before.reason==='merge_guards_passed_no_mutation') ||
        (row.verdict==='APPROVE'&&report?.status==='applied')) {
       const merge=await guardedMerge({api,fetcher,token:mergeToken,row,clock,evaluator});
