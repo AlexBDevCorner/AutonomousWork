@@ -1,0 +1,25 @@
+name: review-bridge-fixture
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - docs/review-bridge-fixtures/step4.md
+
+permissions:
+  contents: read
+
+jobs:
+  fixture-validation:
+    runs-on: ubuntu-latest
+    steps:
+      # This PR-head checkout is UNTRUSTED. No secrets or write tokens are
+      # exposed to this workflow, and this job cannot dispatch other workflows.
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Enforce reproducible disposable fixture contract
+        run: node tools/review-bridge/fixture-verify.mjs
