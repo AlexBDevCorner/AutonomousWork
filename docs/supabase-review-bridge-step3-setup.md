@@ -67,10 +67,13 @@ put secret values in Git, a task spec, or this chat.
    created for SUPABASE_REVIEW_BRIDGE_KEY (or mint a fresh named key). Save
    it in **Edge Function Secrets** as REVIEW_BRIDGE_DB_KEY. Do NOT copy a
    Supabase key into any new GitHub secret.
-2. Generate a **different** 32-byte or longer random value (e.g.,
-   PowerShell: [Convert]::ToHexString(
-   [System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
-   . Save the **same value** in Supabase Edge Function Secrets as
+2. Generate a **different** 32-byte or longer random value using PowerShell:
+
+   ```powershell
+   [Convert]::ToHexString([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+   ```
+
+   Save the **same value** in Supabase Edge Function Secrets as
    REVIEW_BRIDGE_QUEUE_TOKEN and in AutonomousWork GitHub Actions
    repository **Secrets** as REVIEW_BRIDGE_QUEUE_TOKEN. This is
    deliberately different from REVIEW_BRIDGE_WEBHOOK_SECRET.
@@ -107,24 +110,24 @@ put secret values in Git, a task spec, or this chat.
 
 Inspect queue processing without exposing keys:
 
-\`\`\`sql
+```sql
 select id, test_only, status, attempts, claimed_at, lease_until,
        processed_at, last_error, validation_result,
        github_review_id, merge_sha
 from public.autonomous_review_queue
 order by created_at desc limit 5;
-\`\`\`
+```
 
 Verify RPC privileges without changing RLS:
 
-\`\`\`sql
+```sql
 select routine_schema, routine_name
 from information_schema.routines
 where routine_name in (
   'review_bridge_claim_test_queue',
   'review_bridge_finish_test_queue'
 );
-\`\`\`
+```
 
 CI must run node --test tools/review-bridge/*.test.mjs, including
 missing credentials, repeated deliveries, token fencing, disabled
