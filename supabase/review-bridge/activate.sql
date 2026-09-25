@@ -11,7 +11,7 @@ begin
   end if;
 
   if to_regprocedure('review_bridge.dispatch_queue_insert()') is null then
-    raise exception 'Run prepare.sql first';
+    raise exception 'Apply review_bridge_delivery_preparation migration first';
   end if;
 
   if not exists (
