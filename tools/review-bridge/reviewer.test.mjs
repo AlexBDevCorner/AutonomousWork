@@ -120,6 +120,25 @@ test('actual REQUEST_CHANGES POST uses its exact head and never merges',async()=
   assert.equal(q.finishes.length,1);
 });
 
+test('scheduled location + explanation P1 is included in the submitted GitHub review',async()=>{
+  const row=makeRow();
+  row.findings=[{
+    severity:'P1',path:'src/MtgSoloSports/Persistence/Saves/SaveStore.cs',
+    location:'OpenDbContext(Guid saveId)',
+    explanation:'Existing saves fail because the new Stages/Rounds migration is never applied.',
+  }];
+  const mock=apiMock(),q=queueMock(row),writes=writeMock(mock);
+  const done=await runReviewer({queue:q,api:mock.api,reviewerToken:'human',
+    mergeToken:'app',id,fetcher:writes.fetcher,evaluator});
+  assert.equal(done.status,'applied');
+  const review=writes.calls.find(c=>c.url.endsWith('/pulls/4/reviews'));
+  assert.equal(review.body.event,'REQUEST_CHANGES');
+  assert.equal(review.body.commit_id,sha);
+  assert.match(review.body.body,/Existing saves fail because the new Stages\/Rounds migration is never applied/);
+  assert.match(review.body.body,/OpenDbContext\(Guid saveId\)/);
+  assert.equal(writes.calls.some(c=>c.url.endsWith('/merge')),false);
+});
+
 test('a real APPROVE POST is followed by fresh independent guarded GitHub merge',async()=>{
   const row=makeRow('APPROVE'),mock=apiMock(),q=queueMock(row),writes=writeMock(mock);
   const done=await runReviewer({queue:q,api:mock.api,reviewerToken:'human',
