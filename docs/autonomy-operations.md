@@ -100,10 +100,10 @@ without that trusted disagreement marker blocks as
 `correction_did_not_advance_head`, so a consumed review ID can never deadlock
 the task. Closing an unmerged PR blocks the task;
 automation does not reopen it. A merge can still reconcile a blocked task to done.
-`maxAttempts` bounds implementation attempts per task and
-`maxStartsPerProjectPerDay` bounds worker starts per project/day. They are
-runaway/cost safety brakes, not task authorization. Current defaults are 5
-implementation attempts and 8 starts per project/day.
+`maxAttempts` bounds implementation attempts per task, and `maxCorrectionRounds`
+bounds review fixes and CI repairs per task. There is no daily project-start
+limit; a project may begin its next eligible task as soon as the previous one
+is complete. Per-task retry limits and single-active-task guards remain.
 
 For recovery, inspect the recorded run and PR first. Keep historical attempts;
 never delete the ledger to reset counters. A blocked implementation whose latest
@@ -117,8 +117,8 @@ node tools/autonomy/run.mjs --apply --retry RM-004
 In GitHub Actions, run **Autonomous dispatcher and reconciler** manually and set
 the optional **retry_task** input to the blocked task ID. The retry path fails
 closed unless the task and execution are both blocked, the failure is an observed
-completed worker run, the implementation-attempt and daily-start caps still
-permit another attempt, the project/global switches are enabled, dependencies
+completed worker run, the implementation-attempt limit still
+permits another attempt, the project/global switches are enabled, dependencies
 remain done, no target worker is active, and there is no conflicting autonomous
 PR. A partial open PR for the same task is allowed and is reused by the worker.
 

@@ -24,7 +24,7 @@ const config = () => ({
   controlBranch: 'master', projects: {
     mtgsolosports: { branch: 'main', workflow: 'autonomous-worker.yml' },
   },
-  maxAttempts: 5, maxCorrectionRounds: 3, maxStartsPerProjectPerDay: 8,
+  maxAttempts: 5, maxCorrectionRounds: 3,
   dispatchGraceMinutes: 15, maxRunMinutes: 135,
   reviewers: ['AlexBDevCorner'], requiredChecks: ['build-and-test'],
 });

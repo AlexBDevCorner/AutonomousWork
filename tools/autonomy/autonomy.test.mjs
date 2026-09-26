@@ -303,9 +303,23 @@ test('trusted current-head review can schedule one bounded correction', () => {
   assert.equal(select(f).kind, 'correction');
   e.attempts.push({ ...e.attempts[0], kind: 'correction', reviewId: 12 }); assert.equal(select(f), null);
 });
-test('daily budget prevents new work', () => {
-  const f = fixture(); f.config.maxStartsPerProjectPerDay = 1;
-  f.state.executions = [{ ...record(), taskId: 'RM-000', status: 'done' }]; assert.equal(select(f), null);
+test('same-day historical starts never block ready work', () => {
+  const f = fixture();
+  f.state.executions = Array.from({ length: 12 }, (_, i) => ({
+    ...record(), taskId: `RM-HIST-${i}`, status: 'done',
+  }));
+  assert.equal(select(f).task.id, 'RM-001');
+});
+
+test('same-day historical starts never block an otherwise eligible explicit retry', () => {
+  const f = fixture();
+  f.catalog.tasks[0].status = 'blocked';
+  const e = { ...record(), status: 'blocked', blockReason: 'worker_failure' };
+  e.attempts[0] = { ...e.attempts[0], runId: 8, conclusion: 'failure', completedAt: new Date(now).toISOString() };
+  f.state.executions = Array.from({ length: 12 }, (_, i) => ({
+    ...record(), taskId: `RM-HIST-${i}`, status: 'done',
+  })).concat(e);
+  assert.equal(chooseRetry('RM-001', f.catalog, f.state, { repomanager: f.snapshot }, f.config, now).retry, true);
 });
 test('correction round cap blocks another fix even on a fresh review', () => {
   const f = fixture(); f.config.maxCorrectionRounds = 1; f.catalog.tasks[0].status = 'review';
