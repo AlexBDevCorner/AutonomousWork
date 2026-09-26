@@ -26,10 +26,9 @@ function asEvidence(decision) {
 function verifyClaim(row,id,clock) {
   if (!row || row.id !== id || row.status !== 'processing' || row.test_only !== false ||
       !OWNER.test(row.repository) || !/^[a-z0-9-]+$/.test(row.project_id) ||
-      row.source !== 'chatgpt-scheduled' ||
       row.source !== 'chatgpt-scheduled' || !isUuid(row.claim_token) ||
       !Number.isFinite(Date.parse(row.lease_until)) ||
-      Date.parse(row.lease_until) <= clock()) throw Error('Invalid live live queue claim');
+      Date.parse(row.lease_until) <= clock()) throw Error('Invalid live queue claim');
 }
 function reviewEvent(verdict) {
   return verdict === 'REQUEST_CHANGES' ? 'REQUEST_CHANGES' : 'APPROVE';
