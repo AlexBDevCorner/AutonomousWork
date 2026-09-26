@@ -1,7 +1,7 @@
 // Delivery-only bridge. Never treat a queue insert as permission to review or merge.
-// Test rows keep their old event type; real MSS rows dispatch to a separately gated job.
+// Test-only and real review records dispatch to distinct permanent workflow paths.
 const EVENT_TYPE = "autonomous_review_inserted";
-const PILOT_EVENT_TYPE = "autonomous_review_mss_pilot_inserted";
+const TEST_EVENT_TYPE = "autonomous_review_test_inserted";
 const DISPATCH_URL =
   "https://api.github.com/repos/AlexBDevCorner/AutonomousWork/dispatches";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -46,9 +46,7 @@ function validInsert(body: unknown): body is {
     row.schema_version === 1 &&
     row.source === "chatgpt-scheduled" &&
     row.status === "queued" &&
-    (row.test_only === true ||
-      (row.test_only === false && row.repository === "AlexBDevCorner/MtgSoloSports" &&
-        row.project_id === "mtgsolosports")) &&
+    typeof row.test_only === "boolean" &&
     typeof row.repository === "string" &&
     /^AlexBDevCorner\/[A-Za-z0-9_.-]+$/.test(row.repository) &&
     typeof row.project_id === "string" && /^[a-z0-9-]+$/.test(row.project_id) &&
@@ -99,7 +97,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        event_type: payload.record.test_only ? EVENT_TYPE : PILOT_EVENT_TYPE,
+        event_type: payload.record.test_only ? TEST_EVENT_TYPE : EVENT_TYPE,
         client_payload: { queue_id: queueId },
       }),
       signal: AbortSignal.timeout(10000),

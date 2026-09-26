@@ -6,15 +6,18 @@
   "projects": {
     "repomanager": {
       "branch": "master",
-      "workflow": "autonomous-worker.yml"
+      "workflow": "autonomous-worker.yml",
+      "reviewEnabled": false
     },
     "mandarinbotnet": {
       "branch": "main",
-      "workflow": "autonomous-worker.yml"
+      "workflow": "autonomous-worker.yml",
+      "reviewEnabled": false
     },
     "mtgsolosports": {
       "branch": "main",
-      "workflow": "autonomous-worker.yml"
+      "workflow": "autonomous-worker.yml",
+      "reviewEnabled": true
     }
   },
   "maxAttempts": 5,

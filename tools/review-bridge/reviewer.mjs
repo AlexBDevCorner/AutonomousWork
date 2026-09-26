@@ -1,13 +1,16 @@
-// Live Supabase -> GitHub pilot, hardcoded to the personal MtgSoloSports repo.
-// ChatGPT supplies the review analysis; this code never invents findings or an approval.
+// Production Supabase -> GitHub review processor. The scheduled ChatGPT reviewer
+// supplies the actual code assessment; deterministic code enforces all mutation guards.
 import { appendFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { GitHub } from '../autonomy/github.mjs';
 import { QueueApi, evaluate } from './processor.mjs';
 import { isUuid, terminal } from './guards.mjs';
 
-export const PILOT_REPO = 'AlexBDevCorner/MtgSoloSports';
-const API = '/repos/' + PILOT_REPO;
+const OWNER = /^AlexBDevCorner\/[A-Za-z0-9_.-]+$/;
+const apiRoot = row => {
+  if (!OWNER.test(row?.repository ?? '')) throw Error('Unrecognized target repository');
+  return '/repos/' + row.repository;
+};
 const SHA = /^[a-f0-9]{40}$/;
 const REASON = /^[a-z0-9_]+$/;
 const MAX_BODY = 4000;
@@ -22,10 +25,10 @@ function asEvidence(decision) {
 }
 function verifyClaim(row,id,clock) {
   if (!row || row.id !== id || row.status !== 'processing' || row.test_only !== false ||
-      row.repository !== PILOT_REPO || row.project_id !== 'mtgsolosports' ||
+      !OWNER.test(row.repository) || !/^[a-z0-9-]+$/.test(row.project_id) ||
       row.source !== 'chatgpt-scheduled' || !isUuid(row.claim_token) ||
       !Number.isFinite(Date.parse(row.lease_until)) ||
-      Date.parse(row.lease_until) <= clock()) throw Error('Invalid live pilot queue claim');
+      Date.parse(row.lease_until) <= clock()) throw Error('Invalid live queue claim');
 }
 function reviewEvent(verdict) {
   return verdict === 'REQUEST_CHANGES' ? 'REQUEST_CHANGES' : 'APPROVE';
@@ -34,7 +37,7 @@ function reviewText(row) {
   // Content comes from the actual AI reviewer, not from deterministic CI guards.
   const summary=typeof row.review_summary==='string' ? row.review_summary.trim() : '';
   if(!summary || summary.length>MAX_BODY)throw Error('Review summary missing or oversized');
-  let body='Autonomous review via Supabase pilot. Reviewed SHA: '+row.reviewed_sha+
+  let body='Autonomous review. Reviewed SHA: '+row.reviewed_sha+
     '\n\n'+summary;
   if(row.verdict==='REQUEST_CHANGES') {
     const blocks=row.findings.filter(f=>f && ['P0','P1'].includes(f.severity));
@@ -58,7 +61,7 @@ export async function identity(fetcher, token) {
       method:'GET',redirect:'error',signal:AbortSignal.timeout(20000),
       headers:{
         Authorization:'Bearer '+token,Accept:'application/vnd.github+json',
-        'X-GitHub-Api-Version':'2022-11-28','User-Agent':'AutonomousWork-MSS-Pilot',
+        'X-GitHub-Api-Version':'2022-11-28','User-Agent':'AutonomousWork-Reviewer',
       },
     });
   } catch { throw Error('Unable to verify human reviewer identity'); }
@@ -75,7 +78,7 @@ export async function githubWrite({fetcher, token, path, method, body}) {
       method,redirect:'error',signal:AbortSignal.timeout(25000),
       headers:{
         Authorization:'Bearer '+token,Accept:'application/vnd.github+json',
-        'X-GitHub-Api-Version':'2022-11-28','User-Agent':'AutonomousWork-MSS-Pilot',
+        'X-GitHub-Api-Version':'2022-11-28','User-Agent':'AutonomousWork-Reviewer',
         'Content-Type':'application/json',
       },
       body:JSON.stringify(body),
@@ -91,7 +94,7 @@ export async function githubWrite({fetcher, token, path, method, body}) {
 export async function submitReview({api,fetcher,token,row}) {
   const reviewer=await identity(fetcher,token);
   const payload=await githubWrite({
-    fetcher,token,path:API+'/pulls/'+row.pr_number+'/reviews',method:'POST',
+    fetcher,token,path:apiRoot(row)+'/pulls/'+row.pr_number+'/reviews',method:'POST',
     body:{commit_id:row.reviewed_sha,event:reviewEvent(row.verdict),body:reviewText(row)},
   });
   const state=row.verdict==='APPROVE'?'APPROVED':'CHANGES_REQUESTED';
@@ -100,8 +103,8 @@ export async function submitReview({api,fetcher,token,row}) {
     throw Error('GitHub review response does not match exact head or reviewer');
   // An accepted HTTP response is not enough; independently re-read raw reviews.
   const [reviews,pr]=await Promise.all([
-    api.pages(API+'/pulls/'+row.pr_number+'/reviews'),
-    api.request('GET',API+'/pulls/'+row.pr_number),
+    api.pages(apiRoot(row)+'/pulls/'+row.pr_number+'/reviews'),
+    api.request('GET',apiRoot(row)+'/pulls/'+row.pr_number),
   ]);
   if(!reviews.some(r=>r.id===payload.id && r.commit_id===row.reviewed_sha &&
        r.user?.login===reviewer && r.state===state) ||
@@ -112,23 +115,23 @@ export async function submitReview({api,fetcher,token,row}) {
 export async function guardedMerge({api,fetcher,token,row,clock,evaluator=evaluate}) {
   // Evaluate MERGE_CHECK freshly, even immediately after our own approval.
   const mergeRow={...row,verdict:'MERGE_CHECK'};
-  const before=await evaluator({api,row:mergeRow,now:clock(),pilot:true});
+  const before=await evaluator({api,row:mergeRow,now:clock(),live:true});
   if(before.status!=='dry_run' || before.reason!=='merge_guards_passed_no_mutation')
     return { merged:false, decision:before };
-  const after=await evaluator({api,row:mergeRow,now:clock(),pilot:true});
+  const after=await evaluator({api,row:mergeRow,now:clock(),live:true});
   if(after.status!=='dry_run' || after.reason!=='merge_guards_passed_no_mutation' ||
      after.evidence?.control_sha!==before.evidence?.control_sha)
     return { merged:false, decision:after };
-  const pr=await api.request('GET',API+'/pulls/'+row.pr_number);
+  const pr=await api.request('GET',apiRoot(row)+'/pulls/'+row.pr_number);
   if(pr.state!=='open'||pr.mergeable!==true||pr.head?.sha!==row.reviewed_sha ||
-     pr.base?.repo?.full_name!==PILOT_REPO)
+     pr.base?.repo?.full_name!==row.repository)
     return { merged:false, decision:result('stale','head_changed_before_merge') };
   const out=await githubWrite({
-    fetcher,token,path:API+'/pulls/'+row.pr_number+'/merge',method:'PUT',
+    fetcher,token,path:apiRoot(row)+'/pulls/'+row.pr_number+'/merge',method:'PUT',
     body:{sha:row.reviewed_sha,merge_method:'merge'},
   });
   if(out.merged!==true||!SHA.test(out.sha??''))throw Error('GitHub merge response uncertain');
-  const confirmed=await api.request('GET',API+'/pulls/'+row.pr_number);
+  const confirmed=await api.request('GET',apiRoot(row)+'/pulls/'+row.pr_number);
   if(confirmed?.state!=='closed'||confirmed?.merged!==true ||
      confirmed?.head?.sha!==row.reviewed_sha||confirmed?.merge_commit_sha!==out.sha)
     throw Error('GitHub merge result not independently confirmed');
@@ -136,8 +139,8 @@ export async function guardedMerge({api,fetcher,token,row,clock,evaluator=evalua
 }
 export async function alreadyReviewed({api,row}) {
   const [pr,reviews]=await Promise.all([
-    api.request('GET',API+'/pulls/'+row.pr_number),
-    api.pages(API+'/pulls/'+row.pr_number+'/reviews'),
+    api.request('GET',apiRoot(row)+'/pulls/'+row.pr_number),
+    api.pages(apiRoot(row)+'/pulls/'+row.pr_number+'/reviews'),
   ]);
   const want=row.verdict==='APPROVE'?'APPROVED':'CHANGES_REQUESTED';
   const trusted=reviews.filter(r=>r.user?.login==='AlexBDevCorner'&&
@@ -155,13 +158,13 @@ export async function alreadyReviewed({api,row}) {
 export async function alreadyMerged({api,row}) {
   if(!['APPROVE','MERGE_CHECK'].includes(row.verdict)) return null;
   const [pr,reviews]=await Promise.all([
-    api.request('GET',API+'/pulls/'+row.pr_number),
-    api.pages(API+'/pulls/'+row.pr_number+'/reviews'),
+    api.request('GET',apiRoot(row)+'/pulls/'+row.pr_number),
+    api.pages(apiRoot(row)+'/pulls/'+row.pr_number+'/reviews'),
   ]);
   if(pr?.state!=='closed'||pr.merged!==true||!SHA.test(pr.merge_commit_sha??'')||
      pr.head?.sha!==row.reviewed_sha||pr.head?.ref!=='autonomous/'+row.task_id||
-     pr.head?.repo?.full_name!==PILOT_REPO||
-     pr.base?.repo?.full_name!==PILOT_REPO||pr.base?.ref!=='main'||
+     pr.head?.repo?.full_name!==row.repository||
+     pr.base?.repo?.full_name!==row.repository||!['main','master'].includes(pr.base?.ref)||
      pr.user?.login==='AlexBDevCorner')return null;
   const trusted=reviews.filter(r=>r.user?.login==='AlexBDevCorner'&&
     r.commit_id===row.reviewed_sha&&
@@ -172,11 +175,11 @@ export async function alreadyMerged({api,row}) {
   if(latest?.state!=='APPROVED')return null;
   return {mergeSha:pr.merge_commit_sha,reviewId:latest.id};
 }
-export async function runPilot({queue,api,reviewerToken,mergeToken,id,
+export async function runReviewer({queue,api,reviewerToken,mergeToken,id,
   clock=()=>Date.now(),fetcher=fetch,evaluator=evaluate}) {
-  if(!isUuid(id)||!queue||!api)throw Error('Invalid live pilot dependencies');
+  if(!isUuid(id)||!queue||!api)throw Error('Invalid live review dependencies');
   const current=await queue.get(id);
-  if(!current)return {outcome:'not_a_pilot_record'};
+  if(!current)return {outcome:'not_a_live_record'};
   if(terminal(current.status))return {outcome:'duplicate_terminal',status:current.status};
   if(current.status==='processing'&&Date.parse(current.lease_until)>clock())
     return {outcome:'already_processing'};
@@ -191,12 +194,12 @@ export async function runPilot({queue,api,reviewerToken,mergeToken,id,
       reviewId=previous.reviewId;
       mergeSha=previous.mergeSha;
     }
-    const before=report ? null : await evaluator({api,row,now:clock(),pilot:true});
+    const before=report ? null : await evaluator({api,row,now:clock(),live:true});
     if(before) report=before;
     if(before?.status==='dry_run'&&before.reason==='review_guards_passed_no_mutation' &&
        ['APPROVE','REQUEST_CHANGES'].includes(row.verdict)) {
       // Repeat the complete deterministic check immediately before POST.
-      const fresh=await evaluator({api,row,now:clock(),pilot:true});
+      const fresh=await evaluator({api,row,now:clock(),live:true});
       if(fresh.status==='dry_run'&&fresh.reason===before.reason &&
          fresh.evidence?.control_sha===before.evidence?.control_sha) {
         reviewId=await submitReview({api,fetcher,token:reviewerToken,row});
@@ -227,7 +230,7 @@ export async function runPilot({queue,api,reviewerToken,mergeToken,id,
       // Approval remains useful when merge temporarily lacks eligibility.
     }
     if(!report||!['applied','stale','withheld','failed'].includes(report.status)||
-       !REASON.test(report.reason??''))throw Error('Unexpected pilot guard decision');
+       !REASON.test(report.reason??''))throw Error('Unexpected review guard decision');
   } catch(error) {
     // Do not claim an uncertain review/merge failed definitively. A retry MUST
     // check GitHub's raw persisted reviews first. Keep evidence bounded.
@@ -247,27 +250,27 @@ export async function runPilot({queue,api,reviewerToken,mergeToken,id,
 }
 export function assertEnvironment(env) {
   if(env.GITHUB_REPOSITORY!=='AlexBDevCorner/AutonomousWork'||
-      env.GITHUB_REF!=='refs/heads/master'||env.REVIEW_BRIDGE_MSS_PILOT_ENABLED!=='true'||
+      env.GITHUB_REF!=='refs/heads/master'||env.AUTONOMOUS_REVIEW_ENABLED!=='true'||
       !isUuid(env.QUEUE_ID)||!env.READ_GH_TOKEN||!env.MERGE_GH_TOKEN||
-      !env.REVIEW_BRIDGE_PILOT_REVIEWER_TOKEN||
+      !env.AUTONOMOUS_REVIEWER_TOKEN||
       !env.REVIEW_BRIDGE_QUEUE_TOKEN||env.REVIEW_BRIDGE_QUEUE_TOKEN.length<32)
-    throw Error('MSS-only pilot disabled, or required scoped credentials absent');
+    throw Error('Autonomous review disabled or required credentials missing');
 }
 async function main() {
   assertEnvironment(process.env);
   const env=process.env;
-  const out=await runPilot({
-    queue:new QueueApi(env.REVIEW_BRIDGE_QUEUE_TOKEN,fetch,'pilot'),
+  const out=await runReviewer({
+    queue:new QueueApi(env.REVIEW_BRIDGE_QUEUE_TOKEN,fetch,'live'),
     api:new GitHub(env.READ_GH_TOKEN),
-    reviewerToken:env.REVIEW_BRIDGE_PILOT_REVIEWER_TOKEN,
+    reviewerToken:env.AUTONOMOUS_REVIEWER_TOKEN,
     mergeToken:env.MERGE_GH_TOKEN,
     id:env.QUEUE_ID,
   });
-  console.info('MSS pilot:',out.outcome,out.status??'',out.reason??'',env.QUEUE_ID);
+  console.info('Autonomous reviewer:',out.outcome,out.status??'',out.reason??'',env.QUEUE_ID);
   if(env.GITHUB_STEP_SUMMARY)appendFileSync(env.GITHUB_STEP_SUMMARY,
-    '### MSS live pilot\n- Queue: '+env.QUEUE_ID+
+    '### Autonomous review\n- Queue: '+env.QUEUE_ID+
     '\n- Outcome: '+out.outcome+'\n- Status: '+(out.status??'none')+
     '\n- Reason: '+(out.reason??'none')+'\n');
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)
-  main().catch(e=>{console.error('MSS pilot stopped:',safeReason(e));process.exitCode=1;});
+  main().catch(e=>{console.error('Autonomous reviewer stopped:',safeReason(e));process.exitCode=1;});

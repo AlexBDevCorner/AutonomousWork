@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { validateRecord } from './guards.mjs';
 import { QueueApi } from './processor.mjs';
-import { assertEnvironment, alreadyMerged, guardedMerge, runPilot,
-  submitReview } from './mss-pilot.mjs';
+import { assertEnvironment, alreadyMerged, guardedMerge, runReviewer,
+  submitReview } from './reviewer.mjs';
 
 const id='f8369c6d-9360-4dd0-a5d3-54a229e92a00';
 const sha='a'.repeat(40), mergeSha='b'.repeat(40), controlSha='c'.repeat(40);
@@ -74,42 +74,41 @@ function writeMock(mock) {
   return {calls,fetcher};
 }
 
-test('Step 3 rejects non-test rows; MSS pilot accepts only its own real rows',()=>{
+test('Step 3 rejects non-test rows; live review accepts only its own real rows',()=>{
   const row=makeRow();
   assert.equal(validateRecord(row,id,Date.now()),'production_verdicts_not_enabled');
   assert.equal(validateRecord(row,id,Date.now(),true),null);
-  assert.equal(validateRecord({...row,repository:'AlexBDevCorner/RepoManager'},id,Date.now(),true),
-    'outside_mss_pilot_scope');
+  assert.equal(validateRecord({...row,repository:'AlexBDevCorner/RepoManager'},id,Date.now(),true),null);
   assert.equal(validateRecord({...row,test_only:true},id,Date.now(),true),
-    'outside_mss_pilot_scope');
+    'outside_live_review_scope');
 });
 
-test('pilot QueueApi explicitly opts into MSS-only server-side mode',async()=>{
+test('live QueueApi explicitly opts into server-side reviewed record mode',async()=>{
   const calls=[];const fetcher=async (url,options)=>{
     calls.push({url:String(url),options});
     if(options.method==='GET')return {ok:true,status:200,json:async()=>({row:{id}})};
     return {ok:true,status:200,json:async()=>({claimed:false})};
   };
-  const api=new QueueApi('x'.repeat(64),fetcher,'pilot');
+  const api=new QueueApi('x'.repeat(64),fetcher,'live');
   await api.get(id);await api.claim(id);
-  assert.match(calls[0].url,/mode=pilot/);
-  assert.equal(JSON.parse(calls[1].options.body).mode,'pilot');
+  assert.match(calls[0].url,/mode=live/);
+  assert.equal(JSON.parse(calls[1].options.body).mode,'live');
   assert.ok(!calls[1].options.body.includes('sb_secret_'));
 });
 
-test('hard write flag prevents starting the production pilot',()=>{
+test('hard write flag prevents starting the live reviewer',()=>{
   assert.throws(()=>assertEnvironment({
     GITHUB_REPOSITORY:'AlexBDevCorner/AutonomousWork',GITHUB_REF:'refs/heads/master',
-    REVIEW_BRIDGE_MSS_PILOT_ENABLED:'false',QUEUE_ID:id,
+    AUTONOMOUS_REVIEW_ENABLED:'false',QUEUE_ID:id,
     READ_GH_TOKEN:'read',MERGE_GH_TOKEN:'merge',
-    REVIEW_BRIDGE_PILOT_REVIEWER_TOKEN:'human',REVIEW_BRIDGE_QUEUE_TOKEN:'x'.repeat(64),
+    AUTONOMOUS_REVIEWER_TOKEN:'human',REVIEW_BRIDGE_QUEUE_TOKEN:'x'.repeat(64),
   }),/disabled/);
 });
 
 test('actual REQUEST_CHANGES POST uses its exact head and never merges',async()=>{
   const row=makeRow(),mock=apiMock();
   const q=queueMock(row),writes=writeMock(mock);
-  const done=await runPilot({queue:q,api:mock.api,reviewerToken:'human',
+  const done=await runReviewer({queue:q,api:mock.api,reviewerToken:'human',
     mergeToken:'app',id,fetcher:writes.fetcher,evaluator});
   assert.equal(done.status,'applied');
   assert.equal(done.review_id,999);
@@ -123,7 +122,7 @@ test('actual REQUEST_CHANGES POST uses its exact head and never merges',async()=
 
 test('a real APPROVE POST is followed by fresh independent guarded GitHub merge',async()=>{
   const row=makeRow('APPROVE'),mock=apiMock(),q=queueMock(row),writes=writeMock(mock);
-  const done=await runPilot({queue:q,api:mock.api,reviewerToken:'human',
+  const done=await runReviewer({queue:q,api:mock.api,reviewerToken:'human',
     mergeToken:'app',id,fetcher:writes.fetcher,evaluator});
   assert.equal(done.status,'applied');
   assert.equal(done.merge_sha,mergeSha);
@@ -137,7 +136,7 @@ test('a lost merge acknowledgement recovers from existing GitHub approval and me
   const mock=apiMock({initialPr:pr({state:'closed',merged:true,merge_commit_sha:mergeSha}),
     initialReviews:[completedReview()]});
   const q=queueMock(row);
-  const done=await runPilot({queue:q,api:mock.api,
+  const done=await runReviewer({queue:q,api:mock.api,
     reviewerToken:'human',mergeToken:'app',id,
     fetcher:()=>{throw Error('No duplicate writes allowed');},
     evaluator:()=>{throw Error('Do not re-evaluate an already merged PR');}});
@@ -154,7 +153,7 @@ test('an earlier same-head approval does not override a newer trusted change req
   const mock=apiMock({initialReviews:[old,newer]});
   let writes=0;
   const q=queueMock(row);
-  const done=await runPilot({queue:q,api:mock.api,reviewerToken:'human',
+  const done=await runReviewer({queue:q,api:mock.api,reviewerToken:'human',
     mergeToken:'app',id,fetcher:()=>{writes++;throw Error('Unsafe write');},
     evaluator:async()=>({status:'withheld',reason:'trusted_same_head_verdict_exists'})});
   assert.equal(writes,0);
@@ -169,4 +168,22 @@ test('MERGE_CHECK without latest trusted approval cannot call the merge API',asy
     evaluator:async()=>({status:'withheld',reason:'merge_requires_latest_same_head_trusted_approval'})});
   assert.equal(status.merged,false);
   assert.equal(calls,0);
+});
+
+
+test('same permanent reviewer handles a second enrolled repository without alternate code paths',async()=>{
+  const row={...makeRow(),repository:'AlexBDevCorner/RepoManager',project_id:'repomanager',task_id:'RM-008'};
+  const other=pr({
+    head:{sha,ref:'autonomous/RM-008',repo:{full_name:'AlexBDevCorner/RepoManager'}},
+    base:{ref:'master',repo:{full_name:'AlexBDevCorner/RepoManager'}},
+  });
+  const mock=apiMock({initialPr:other}),q=queueMock(row),writes=writeMock(mock);
+  const done=await runReviewer({queue:q,api:mock.api,reviewerToken:'human',
+    mergeToken:'app',id,fetcher:writes.fetcher,evaluator});
+  assert.equal(done.status,'applied');
+  assert.equal(done.review_id,999);
+  const sent=writes.calls.find(c=>c.url.endsWith('/pulls/4/reviews'));
+  assert.ok(sent.url.includes('/repos/AlexBDevCorner/RepoManager/'));
+  assert.equal(sent.body.commit_id,sha);
+  assert.equal(writes.calls.some(c=>c.url.endsWith('/merge')),false);
 });

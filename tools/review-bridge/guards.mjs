@@ -7,20 +7,19 @@ const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-
 const VERDICTS = new Set(['APPROVE', 'REQUEST_CHANGES', 'WITHHOLD', 'MERGE_CHECK']);
 const TERMINAL = new Set(['applied', 'dry_run', 'stale', 'withheld', 'failed']);
 export const OBSERVATION_MAX_AGE_MS = 3 * 60 * 60 * 1000;
-export const PROTOCOL_BLOB_SHA = 'ad36722063ccee42d92597296d8b8ee293c95636';
+export const PROTOCOL_BLOB_SHA = 'f503c2fe085fafa666026923ff352b7140ea517e';
 const result = (status, reason, evidence = {}) => ({ status, reason, evidence });
 const word = x => typeof x === 'string' && x.trim().length > 0;
 const lower = x => String(x ?? '').toLowerCase();
 export const isUuid = x => typeof x === 'string' && UUID.test(x);
 export const terminal = value => TERMINAL.has(value);
 
-export function validateRecord(row, id, now = Date.now(), pilot = false) {
+export function validateRecord(row, id, now = Date.now(), live = false) {
   if (!row || row.id !== id || !isUuid(id)) return 'invalid_or_mismatched_queue_id';
   if (row.schema_version !== 1 || row.source !== 'chatgpt-scheduled') return 'unknown_queue_schema_or_source';
-  if (pilot) {
-    if (row.test_only !== false || row.repository !== 'AlexBDevCorner/MtgSoloSports' ||
-        row.project_id !== 'mtgsolosports')
-      return 'outside_mss_pilot_scope';
+  if (live) {
+    if (row.test_only !== false || !/^AlexBDevCorner\/[A-Za-z0-9_.-]+$/.test(row.repository))
+      return 'outside_live_review_scope';
   } else if (row.test_only !== true) return 'production_verdicts_not_enabled';
   if (!['queued', 'processing', 'retryable', ...TERMINAL].includes(row.status)) return 'invalid_queue_status';
   if (!word(row.repository) || !/^AlexBDevCorner\/[A-Za-z0-9_.-]+$/.test(row.repository) ||
