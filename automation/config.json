@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "enabled": false,
+  "enabled": true,
   "controlRepository": "AlexBDevCorner/AutonomousWork",
   "controlBranch": "master",
   "projects": {
