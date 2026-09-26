@@ -4,7 +4,7 @@ import { appendFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { GitHub } from '../autonomy/github.mjs';
 import { QueueApi, evaluate } from './processor.mjs';
-import { isUuid, terminal } from './guards.mjs';
+import { findingDescription, isUuid, terminal } from './guards.mjs';
 
 const OWNER = /^AlexBDevCorner\/[A-Za-z0-9_.-]+$/;
 const apiRoot = row => {
@@ -44,7 +44,7 @@ function reviewText(row) {
     if(!blocks.length)throw Error('Request changes requires documented blocking findings');
     body+='\n\nBlocking findings:\n'+blocks.map(f=>{
       const where=f.path && f.line ? f.path+':'+f.line : f.location;
-      const note=f.description ?? f.message ?? f.summary;
+      const note=findingDescription(f);
       if(typeof where!=='string' || !where.trim() ||
          typeof note!=='string' || !note.trim())throw Error('Unclear blocking finding');
       return '- ['+f.severity+'] '+where+': '+note;
