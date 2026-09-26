@@ -22,7 +22,8 @@ permissions:
 
 jobs:
   control:
-    if: github.ref == 'refs/heads/master'
+    # Paused during GitHub Actions billing investigation. Restore original guard to resume.
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
