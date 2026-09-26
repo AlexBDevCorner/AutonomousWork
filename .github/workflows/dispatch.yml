@@ -1,7 +1,12 @@
 name: Autonomous dispatcher and reconciler
-# All autonomous execution is paused. workflow_dispatch temporarily removed so
-# external 10-minute callers cannot create repeated Actions runs.
 on:
+  workflow_dispatch:
+    inputs:
+      retry_task:
+        description: "Blocked task ID to retry; leave empty for normal dispatch"
+        required: false
+        default: ''
+        type: string
   push:
     branches:
       - master
@@ -17,8 +22,7 @@ permissions:
 
 jobs:
   control:
-    # Paused during GitHub Actions billing investigation. Restore original guard to resume.
-    if: ${{ false }}
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
