@@ -27,8 +27,7 @@ jobs:
   # This mode is intentionally mandatory dry-run. NO PR write permissions,
   # NO checkout of untrusted PR-head code and NO Supabase admin key in GitHub.
   deterministic-dry-run:
-    # Paused: prevent runners even if repository_dispatch continues arriving.
-    if: false && github.ref == 'refs/heads/master' && (github.event.action == 'autonomous_review_test_inserted' || inputs.mode == 'test')
+    if: github.ref == 'refs/heads/master' && (github.event.action == 'autonomous_review_test_inserted' || inputs.mode == 'test')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -66,9 +65,7 @@ jobs:
 
   # Final live reviewer. Per-project authorization comes from control config.
   review:
-    # Paused: preserve normal eligibility for easy restoration.
     if: >-
-      false &&
       github.ref == 'refs/heads/master' &&
       vars.AUTONOMOUS_REVIEW_ENABLED == 'true' &&
       (github.event.action == 'autonomous_review_inserted' || inputs.mode == 'live')
