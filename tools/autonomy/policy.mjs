@@ -1,14 +1,14 @@
 // Pure orchestration rules. Inputs are validated planning data and GitHub observations.
 export function validateConfig(config) {
   const keys = ['version', 'enabled', 'controlRepository', 'controlBranch', 'projects', 'maxAttempts',
-    'maxCorrectionRounds', 'maxStartsPerProjectPerDay', 'dispatchGraceMinutes', 'maxRunMinutes',
+    'maxCorrectionRounds', 'dispatchGraceMinutes', 'maxRunMinutes',
     'reviewers', 'requiredChecks'];
   if (Object.keys(config).some(k => !keys.includes(k)) || keys.some(k => !(k in config)))
     throw new Error('Unknown or missing automation configuration property.');
   if (config.version !== 1 || typeof config.enabled !== 'boolean') throw new Error('Invalid automation version/enabled.');
   if (!/^[\w.-]+\/[\w.-]+$/.test(config.controlRepository) || !/^[\w./-]+$/.test(config.controlBranch))
     throw new Error('Invalid control repository/branch.');
-  for (const k of ['maxAttempts', 'maxCorrectionRounds', 'maxStartsPerProjectPerDay', 'dispatchGraceMinutes'])
+  for (const k of ['maxAttempts', 'maxCorrectionRounds', 'dispatchGraceMinutes'])
     if (!Number.isInteger(config[k]) || config[k] < 1 || config[k] > 120) throw new Error(`Invalid limit: ${k}`);
   if (!Number.isInteger(config.maxRunMinutes) || config.maxRunMinutes < 1 || config.maxRunMinutes > 360)
     throw new Error('Invalid limit: maxRunMinutes');
@@ -118,8 +118,6 @@ export function chooseWork(catalog, state, snapshots, config, now) {
     const snapshot = snapshots[project.id];
     if (!snapshot || snapshot.runs.some(activeRun)) continue;
     const records = state.executions.filter(e => e.projectId === project.id);
-    const starts = records.flatMap(e => e.attempts).filter(a => a.startedAt.slice(0, 10) === new Date(now).toISOString().slice(0, 10));
-    if (starts.length >= config.maxStartsPerProjectPerDay) continue;
     const open = snapshot.prs.filter(pr => pr.state === 'open' && autonomousPr(pr));
     if (open.length) {
       if (open.length !== 1) continue;
@@ -181,10 +179,6 @@ export function chooseRetry(taskId, catalog, state, snapshots, config, now) {
 
   const snapshot = snapshots[project.id];
   if (!snapshot || snapshot.runs.some(activeRun)) return null;
-  const starts = state.executions.filter(e => e.projectId === project.id).flatMap(e => e.attempts)
-    .filter(a => a.startedAt.slice(0, 10) === new Date(now).toISOString().slice(0, 10));
-  if (starts.length >= config.maxStartsPerProjectPerDay) return null;
-
   const taskPrs = snapshot.prs.filter(pr => pr.head.ref === `autonomous/${taskId}` &&
     pr.head.repo?.full_name === project.repository);
   if (taskPrs.length > 1) return null;
