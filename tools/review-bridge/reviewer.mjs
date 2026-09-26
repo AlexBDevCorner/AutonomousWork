@@ -196,7 +196,10 @@ export async function runReviewer({queue,api,reviewerToken,mergeToken,id,
     }
     const before=report ? null : await evaluator({api,row,now:clock(),live:true});
     if(before) report=before;
-    if(before?.status==='dry_run'&&before.reason==='review_guards_passed_no_mutation' &&
+    const reviewGuardReason = row.verdict === 'REQUEST_CHANGES'
+      ? 'blocking_findings_recorded_no_mutation'
+      : 'review_guards_passed_no_mutation';
+    if(before?.status==='dry_run'&&before.reason===reviewGuardReason &&
        ['APPROVE','REQUEST_CHANGES'].includes(row.verdict)) {
       // Repeat the complete deterministic check immediately before POST.
       const fresh=await evaluator({api,row,now:clock(),live:true});
