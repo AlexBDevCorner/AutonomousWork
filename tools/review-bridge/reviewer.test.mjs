@@ -169,3 +169,21 @@ test('MERGE_CHECK without latest trusted approval cannot call the merge API',asy
   assert.equal(status.merged,false);
   assert.equal(calls,0);
 });
+
+
+test('same permanent reviewer handles a second enrolled repository without alternate code paths',async()=>{
+  const row={...makeRow(),repository:'AlexBDevCorner/RepoManager',project_id:'repomanager',task_id:'RM-008'};
+  const other=pr({
+    head:{sha,ref:'autonomous/RM-008',repo:{full_name:'AlexBDevCorner/RepoManager'}},
+    base:{ref:'master',repo:{full_name:'AlexBDevCorner/RepoManager'}},
+  });
+  const mock=apiMock({initialPr:other}),q=queueMock(row),writes=writeMock(mock);
+  const done=await runReviewer({queue:q,api:mock.api,reviewerToken:'human',
+    mergeToken:'app',id,fetcher:writes.fetcher,evaluator});
+  assert.equal(done.status,'applied');
+  assert.equal(done.review_id,999);
+  const sent=writes.calls.find(c=>c.url.endsWith('/pulls/4/reviews'));
+  assert.ok(sent.url.includes('/repos/AlexBDevCorner/RepoManager/'));
+  assert.equal(sent.body.commit_id,sha);
+  assert.equal(writes.calls.some(c=>c.url.endsWith('/merge')),false);
+});
