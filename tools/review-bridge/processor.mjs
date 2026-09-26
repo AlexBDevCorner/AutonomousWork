@@ -20,14 +20,14 @@ export class QueueApi {
       throw new Error('REVIEW_BRIDGE_QUEUE_TOKEN missing or too short');
     this.token = token;
     this.fetcher = fetcher;
-    if (!["test","pilot"].includes(mode)) throw new Error("Unknown queue mode");
+    if (!["test","live"].includes(mode)) throw new Error("Unknown queue mode");
     this.mode = mode;
   }
   async request(method, id, data) {
     if (!isUuid(id)) throw new Error('Invalid queue UUID');
     const url = new URL(EDGE);
     if (method === 'GET') url.searchParams.set('id', id);
-    if (method === 'GET' && this.mode === "pilot") url.searchParams.set("mode", "pilot");
+    if (method === 'GET' && this.mode === "live") url.searchParams.set("mode", "pilot");
     const response = await this.fetcher(url, {
       method,
       redirect: 'error',
@@ -36,7 +36,7 @@ export class QueueApi {
         Accept: 'application/json',
         ...(method === 'POST' ? { 'Content-Type': 'application/json' } : {}),
       },
-      ...(method === 'POST' ? { body: JSON.stringify({ id, ...(this.mode === 'pilot' ? { mode: 'pilot' } : {}), ...data }) } : {}),
+      ...(method === 'POST' ? { body: JSON.stringify({ id, ...(this.mode === 'live' ? { mode: 'pilot' } : {}), ...data }) } : {}),
       signal: AbortSignal.timeout(20000),
     });
     if (method === 'GET' && response.status === 404) return null;
@@ -122,8 +122,8 @@ export async function controlSnapshot(api, row) {
   };
 }
 
-export async function evaluate({ api, row, now = Date.now(), pilot = false }) {
-  const invalid = validateRecord(row, row.id, now, pilot);
+export async function evaluate({ api, row, now = Date.now(), live = false }) {
+  const invalid = validateRecord(row, row.id, now, live);
   if (invalid) return reason('withheld', invalid);
   if (row.status !== 'processing') return reason('failed', 'unclaimed_record');
 
@@ -136,6 +136,10 @@ export async function evaluate({ api, row, now = Date.now(), pilot = false }) {
     protocolSha: control.protocolSha,
   });
   if (planning.status) return planning;
+  // Project enrollment is the permanent, per-project review enablement gate.
+  // Disabling a project stops both fresh review posts and future merges.
+  if (live && planning.target.reviewEnabled !== true)
+    return reason('withheld', 'project_review_disabled');
   const prefix = '/repos/' + row.repository;
   const prPath = prefix + '/pulls/' + row.pr_number;
   const pr = await api.request('GET', prPath);
