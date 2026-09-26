@@ -7,7 +7,7 @@ const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-
 const VERDICTS = new Set(['APPROVE', 'REQUEST_CHANGES', 'WITHHOLD', 'MERGE_CHECK']);
 const TERMINAL = new Set(['applied', 'dry_run', 'stale', 'withheld', 'failed']);
 export const OBSERVATION_MAX_AGE_MS = 3 * 60 * 60 * 1000;
-export const PROTOCOL_BLOB_SHA = 'ad36722063ccee42d92597296d8b8ee293c95636';
+export const PROTOCOL_BLOB_SHA = 'f503c2fe085fafa666026923ff352b7140ea517e';
 const result = (status, reason, evidence = {}) => ({ status, reason, evidence });
 const word = x => typeof x === 'string' && x.trim().length > 0;
 const lower = x => String(x ?? '').toLowerCase();
