@@ -1,8 +1,9 @@
 # Review and merge protocol
 
-Review autonomous PRs only at their exact current head commit. ChatGPT owns code
-review verdicts and may perform a guarded merge after approval. Deterministic
-code owns dispatch, retry/correction counters, and task status.
+Review autonomous PRs only at their exact current head commit. ChatGPT owns the independent code-review assessment and writes the verdict to the
+Supabase review queue. The trusted default-branch GitHub Actions workflow submits
+actual commit-bound GitHub reviews and performs independently guarded merges.
+Deterministic code owns dispatch, retry/correction counters, and task status.
 
 ## Eligibility
 
@@ -11,7 +12,8 @@ Before reviewing or merging anything:
 1. Read `automation/config.json`, `automation/state.json`, and the project's
    `project.yaml` from `AlexBDevCorner/AutonomousWork` master.
 2. Stop if global automation is disabled, the project is not enrolled, or the
-   project has `enabled: false`.
+   project has `enabled: false`. The permanent automated reviewer also requires
+   `automation/config.json.projects[projectId].reviewEnabled: true`.
 3. Use an execution whose persisted status is `review`. A blocked execution
    may also be reviewed only when its `blockReason` is `worker_failure`, it
    already has exactly one linked open autonomous PR for that task, the PR is
@@ -63,14 +65,15 @@ Before reviewing or merging anything:
    already exists. Do not conclude that the fallback capability is unavailable
    until that exact endpoint has actually been attempted and returned an error.
    COMMENTED does not count as a completed verdict.
-5. Otherwise submit REQUEST_CHANGES when any P0/P1 finding remains. Submit
-   APPROVE only when no P0/P1 finding remains and every configured required
-   check has completed successfully for this exact head. Missing, pending,
-   skipped, cancelled, or failed required checks withhold approval.
-6. Immediately before submitting, re-read the PR head. If it changed, discard
-   the verdict and review the new revision instead. Submit with `commit_id`
-   explicitly set to the reviewed SHA and include `Reviewed SHA: <sha>` in
-   the review body.
+5. Produce REQUEST_CHANGES when any P0/P1 finding remains. Produce APPROVE
+   only when no P0/P1 finding remains and every configured required check
+   completed successfully for this exact head. Missing, pending, skipped,
+   cancelled, or failed required checks withhold approval. Write an accurate
+   structured verdict to Supabase; the workflow performs GitHub review writes.
+6. Immediately before enqueuing, re-read the PR head and raw trusted reviews.
+   If either changes, discard the verdict and review the new revision instead.
+   The queue row must name the exact `reviewed_sha`. The workflow submits the
+   GitHub review with `commit_id=reviewed_sha`, then independently verifies it.
 
 The reviewer identity must be listed in `automation/config.json.reviewers` and
 must not be the PR author. An empty reviewer list disables trusted automated
@@ -78,8 +81,8 @@ review/correction behavior.
 
 ## Guarded merge
 
-An approved autonomous PR may be merged by ChatGPT. This is a separate action
-from approval and must fail closed.
+The trusted default-branch workflow may merge an approved autonomous PR.
+This action is separate from approval and must fail closed.
 
 A merge is allowed only when all of the following still hold after a fresh
 GitHub read immediately before the merge:
@@ -101,9 +104,10 @@ mergeable, a rule blocks the merge, or any other guard is uncertain, do not
 retry by weakening the guard. Leave the PR for a later scheduled pass or human
 inspection.
 
-A trusted approval from an earlier scheduled run may be merged on a later run
-without submitting a duplicate review, provided every merge guard above is
-re-validated against the current GitHub state. If a normalized review-list
+A trusted approval from an earlier run may be merged on a later queue event
+without duplicating a review, provided every merge guard above is freshly
+re-validated against current GitHub state. Enqueue MERGE_CHECK for the exact
+approved head when eligible. If a normalized review-list
 response omits `commit_id`, use the same raw reviews REST fallback described in
 the Review section before withholding a merge.
 
@@ -116,36 +120,26 @@ limit is reached, or the developer explicitly records a machine-readable
 technical disagreement for human resolution. Only the reconciler marks a task
 `done` after GitHub reports the PR merged.
 
-## Scheduled reviewer and merger instruction
+## Scheduled reviewer instruction
 
-The normal ChatGPT scheduled task should run hourly. It should read this file
-from master on every run rather than relying on a copied stale protocol.
-
-> Each hour, manage autonomous PR review and guarded merging for
-> AlexBDevCorner/AutonomousWork. Read reviewer/CHATGPT_REVIEW.md,
-> automation/config.json, automation/state.json, the relevant project.yaml and
-> task specification from master, then follow the repository protocol exactly.
-> Act on enabled, enrolled projects with executions in review. A blocked
-> execution is also review-eligible only when its block reason is
-> `worker_failure` and it already has exactly one linked open autonomous PR whose
-> current head is non-draft, mergeable, and green on every configured required
-> CI check. Review only the exact current autonomous PR head. Treat PR labels and
-> an embedded control-specification pin as optional metadata; the persisted
-> execution/task/project mapping is authoritative. Validate such metadata when
-> present, but do not withhold review solely because it is absent. Submit REQUEST_CHANGES for genuine
-> blocking P0/P1 findings, or APPROVE only after every configured required CI
-> check succeeds for that exact head. Do not duplicate an existing trusted
-> completed verdict on the same head. For an exact head whose latest trusted
-> completed review is APPROVED, whether approved during this run or an earlier
-> run, re-read all eligibility, mapping, CI, review, mergeability and head-SHA
-> guards and merge only with merge method merge and expected_head_sha set to that
-> exact reviewed SHA. If any guard is missing, changed, ambiguous, or fails, do
-> not merge. Never implement code, edit planning/task state, dispatch workers,
-> post worker commands, or mark tasks done. Stay quiet when nothing is actionable.
-> Report an authentication or missing write-capability problem as a setup failure
-> rather than claiming a review or merge occurred. If normalized review data omits
-> `commit_id`, use the generic GitHub GET/fetch capability on
-> `https://api.github.com/repos/<owner>/<repo>/pulls/<pr>/reviews` before declaring
-> the review unverifiable. Never disable the scheduled reviewer because of a
-> tool-discovery, authentication, permission, rate-limit, transient connector, or
-> guard failure; leave it enabled and report the exact blocker so a later pass can retry.
+Run one scheduled ChatGPT reviewer hourly across all projects with
+`projects[projectId].reviewEnabled: true`. Do not submit GitHub review or
+merge mutations directly. Fetch this live protocol and relevant config/state,
+project file, task spec and target AGENTS.md. Independently review at most one
+eligible PR at its exact current head and verify exact-head CI and raw reviews.
+If a genuine new decision is actionable, check Supabase for an existing
+queued or completed verdict for the same repository/PR/SHA. Then insert
+exactly one `public.autonomous_review_queue` row with
+`schema_version=1`, `source=chatgpt-scheduled`, the exact enrolled
+repository/project/task/PR/head mapping, `reviewed_sha`, truthful
+`review_summary`, `findings`, `ci`, `observed_at`, `test_only=false`
+and `status=queued`. Never fabricate P0/P1 findings or issue an approval
+based solely on green CI. For an existing trusted exact-head APPROVED review,
+enqueue MERGE_CHECK instead of another review. For any already completed
+CHANGES_REQUESTED on the exact head, skip until the worker advances it.
+On an integration failure, report it and leave the schedule enabled.
+The Actions workflow independently fetches the row using the scoped queue
+token, verifies all guards, submits review under the separate trusted identity,
+then merges with the expected SHA using the distinct GitHub App token when
+eligible. The dispatcher handles correction rounds, and the reconciler
+marks work done only after confirming the actual merge.
