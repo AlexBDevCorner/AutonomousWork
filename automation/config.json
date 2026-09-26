@@ -22,7 +22,6 @@
   },
   "maxAttempts": 5,
   "maxCorrectionRounds": 3,
-  "maxStartsPerProjectPerDay": 8,
   "dispatchGraceMinutes": 15,
   "maxRunMinutes": 135,
   "reviewers": [
