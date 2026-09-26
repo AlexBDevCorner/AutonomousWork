@@ -45,7 +45,9 @@ const apiMock=({initialPr=pr(),initialReviews=[]}={})=>{
 };
 const evaluator=async ({row})=>({
   status:'dry_run',reason:row.verdict==='MERGE_CHECK'
-    ? 'merge_guards_passed_no_mutation' : 'review_guards_passed_no_mutation',
+    ? 'merge_guards_passed_no_mutation'
+    : row.verdict==='REQUEST_CHANGES'
+      ? 'blocking_findings_recorded_no_mutation' : 'review_guards_passed_no_mutation',
   evidence:{control_sha:controlSha,latest_trusted_review_id:999},
 });
 function queueMock(row) {
