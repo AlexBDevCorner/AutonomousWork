@@ -809,7 +809,7 @@
           "kind": "correction",
           "startedAt": "2026-09-26T11:12:33.771Z",
           "sourceControlSha": "05d958af5212c39612b0f02f5da2fa5da03719a5",
-          "dispatchStatus": "pending",
+          "dispatchStatus": "sent",
           "reviewId": 5325725924,
           "headSha": "8dde2b0f2b07656ce482092940c29836799bf365"
         }
