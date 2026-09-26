@@ -1,13 +1,11 @@
 // Queue-scoped HTTP API for the trusted default-branch workflow only.
 // GitHub receives a random queue-only token, NEVER a Supabase service-role key.
-// Database RPCs keep test-only Step 3 and MtgSoloSports pilot rows strictly separated.
+// Database RPCs isolate test queue rows from real review processing.
 const QUEUE = "autonomous_review_queue";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const FINISH = new Set(["dry_run", "stale", "withheld", "failed", "retryable"]);
-const PILOT_FINISH = new Set(["applied", "stale", "withheld", "failed", "retryable"]);
-// Only the existing queue-scoped GitHub credential can reach this mode.
-// RPCs additionally enforce this scope inside Postgres.
-const PILOT_REPO = "AlexBDevCorner/MtgSoloSports";
+const LIVE_FINISH = new Set(["applied", "stale", "withheld", "failed", "retryable"]);
+// Real queue rows require an explicit live mode and server-side claim fencing.
 const API = "https://ayewunekctfmdxgjtqfl.supabase.co/rest/v1/";
 
 const response = (status: number, data: Record<string, unknown>) =>
@@ -62,17 +60,16 @@ Deno.serve(async (request: Request): Promise<Response> => {
     if (request.method === "GET") {
       const url = new URL(request.url);
       const id = url.searchParams.get("id");
-      const pilot = url.searchParams.get("mode") === "pilot";
-      if (!id || !UUID.test(id) || (url.searchParams.has("mode") && !pilot) ||
+      const live = url.searchParams.get("mode") === "live";
+      if (!id || !UUID.test(id) || (url.searchParams.has("mode") && !live) ||
           [...url.searchParams.keys()].some((k) => !["id", "mode"].includes(k))) {
         return response(422, { error: "invalid queue UUID" });
       }
       const q = new URLSearchParams({
         select: "id,schema_version,source,repository,project_id,task_id,pr_number,reviewed_sha,verdict,findings,ci,review_summary,observed_at,test_only,status,attempts,claimed_at,lease_until,github_review_id,merge_sha",
         id: "eq." + id,
-        test_only: pilot ? "eq.false" : "eq.true",
-        ...(pilot ? { repository: "eq." + PILOT_REPO, project_id: "eq.mtgsolosports",
-          source: "eq.chatgpt-scheduled" } : {}),
+        test_only: live ? "eq.false" : "eq.true",
+        ...(live ? { source: "eq.chatgpt-scheduled" } : {}),
         limit: "1",
       });
       result = await postgres(QUEUE + "?" + q, dbKey);
@@ -92,11 +89,11 @@ Deno.serve(async (request: Request): Promise<Response> => {
       return response(422, { error: "invalid queue request" });
     }
 
-    const pilot = value.mode === "pilot";
-    if (value.mode !== undefined && !pilot) return response(422, { error: "invalid queue mode" });
+    const live = value.mode === "live";
+    if (value.mode !== undefined && !live) return response(422, { error: "invalid queue mode" });
 
     if (value.action === "claim" && expectedPayload(value, ["action", "id", "mode"])) {
-      result = await postgres(pilot ? "rpc/review_bridge_claim_mss_pilot_queue" :
+      result = await postgres(live ? "rpc/review_bridge_claim_live_queue" :
         "rpc/review_bridge_claim_test_queue", dbKey, { p_id: value.id });
       if (!result.ok) throw new Error("database claim status " + result.status);
       const rows = await result.json();
@@ -108,22 +105,22 @@ Deno.serve(async (request: Request): Promise<Response> => {
     if (value.action === "finish" &&
         expectedPayload(value, ["action", "id", "mode", "claim_token", "status", "reason", "evidence", "review_id", "merge_sha"]) &&
         typeof value.claim_token === "string" && UUID.test(value.claim_token) &&
-        typeof value.status === "string" && (pilot ? PILOT_FINISH : FINISH).has(value.status) &&
-        (pilot || (value.review_id === undefined && value.merge_sha === undefined)) &&
+        typeof value.status === "string" && (live ? LIVE_FINISH : FINISH).has(value.status) &&
+        (live || (value.review_id === undefined && value.merge_sha === undefined)) &&
         (value.review_id === undefined || value.review_id === null ||
           Number.isSafeInteger(value.review_id) && (value.review_id as number) > 0) &&
         (value.merge_sha === undefined || value.merge_sha === null ||
           typeof value.merge_sha === "string" && /^[a-f0-9]{40}$/.test(value.merge_sha)) &&
         (value.reason === null || typeof value.reason === "string" && value.reason.length <= 500) &&
         object(value.evidence) && JSON.stringify(value.evidence).length <= 4096) {
-      result = await postgres(pilot ? "rpc/review_bridge_finish_mss_pilot_queue" :
+      result = await postgres(live ? "rpc/review_bridge_finish_live_queue" :
         "rpc/review_bridge_finish_test_queue", dbKey, {
         p_id: value.id,
         p_token: value.claim_token,
         p_status: value.status,
         p_reason: value.reason,
         p_evidence: value.evidence,
-        ...(pilot ? { p_review_id: value.review_id ?? null, p_merge_sha: value.merge_sha ?? null } : {}),
+        ...(live ? { p_review_id: value.review_id ?? null, p_merge_sha: value.merge_sha ?? null } : {}),
       });
       if (!result.ok) throw new Error("database finish status " + result.status);
       const applied = await result.json();
