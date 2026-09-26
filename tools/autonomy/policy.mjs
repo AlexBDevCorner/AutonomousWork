@@ -17,7 +17,8 @@ export function validateConfig(config) {
   if (!config.requiredChecks.length) throw new Error('At least one required CI check is needed.');
   if (!config.projects || Array.isArray(config.projects)) throw new Error('Invalid projects configuration.');
   for (const [id, project] of Object.entries(config.projects)) {
-    if (!/^[a-z0-9-]+$/.test(id) || Object.keys(project).some(k => !['branch', 'workflow'].includes(k)) ||
+    if (!/^[a-z0-9-]+$/.test(id) || Object.keys(project).some(k => !['branch', 'workflow', 'reviewEnabled'].includes(k)) ||
+        (project.reviewEnabled !== undefined && typeof project.reviewEnabled !== 'boolean') ||
         !/^[\w./-]+$/.test(project.branch) || !/^[\w.-]+\.ya?ml$/.test(project.workflow))
       throw new Error(`Invalid project configuration: ${id}`);
   }
