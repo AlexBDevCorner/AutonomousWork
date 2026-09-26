@@ -5,3 +5,4 @@ Second trigger for RM-006 after MB-005 claim.
 MtgSoloSports activation trigger on 2026-09-25.
 MtgSoloSports dispatcher access verified/triggered on 2026-09-25.
 Manual normal dispatch after MSS-008 exact-head REQUEST_CHANGES recovery (2026-09-26).
+Dispatch MSS-010 after removing the daily project-start cap (2026-09-26).
