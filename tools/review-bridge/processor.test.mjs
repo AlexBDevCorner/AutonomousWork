@@ -154,6 +154,19 @@ test('trusted completed reviews use exact raw commit_id and latest completed sta
 test('documented blocking findings authorize only a REQUEST_CHANGES dry-run', () => {
   const finding = { severity: 'P1', description: 'Concrete failing branch and production impact', path: 'src/App.cs', line: 23 };
   assert.equal(validateGitHub(observed({ row: { ...row(), verdict: 'REQUEST_CHANGES', findings: [finding] } })).status, 'dry_run');
+  // Regression: the real MSS-008 reviewer supplied location + explanation, not line + description.
+  const scheduledFinding = {
+    severity: 'P1', path: 'src/MtgSoloSports/Persistence/Saves/SaveStore.cs',
+    location: 'OpenDbContext(Guid saveId)',
+    explanation: 'An existing save has no Stages/Rounds tables until migrations are applied.',
+  };
+  assert.equal(validateGitHub(observed({
+    row: { ...row(), verdict: 'REQUEST_CHANGES', findings: [scheduledFinding] },
+  })).status, 'dry_run');
+  assert.equal(validateGitHub(observed({
+    row: { ...row(), verdict: 'REQUEST_CHANGES',
+      findings: [{ ...scheduledFinding, explanation: '   ' }] },
+  })).reason, 'no_documented_blocking_findings');
   assert.equal(validateGitHub(observed({ row: { ...row(), verdict: 'REQUEST_CHANGES', findings: [] } })).reason,
     'no_documented_blocking_findings');
   assert.equal(validateGitHub(observed({ row: { ...row(), findings: [finding] } })).reason,

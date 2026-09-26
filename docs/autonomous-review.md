@@ -101,3 +101,25 @@ Emergency stop: set `AUTONOMOUS_REVIEW_ENABLED=false`. You may disable
 individual projects by changing their reviewEnabled values in the control
 repo. Stopping new actions does not roll back an already accepted review
 or merge; the dispatcher and reconciler are separate processes.
+
+## Scheduled finding payload and terminal recovery
+
+A real `REQUEST_CHANGES` verdict must have at least one actual P0/P1 finding.
+Use `{ "severity": "P1", "path": "...", "line": 42,
+"description": "Concrete trigger and consequence" }` when a line is available.
+Otherwise, use `location` to identify the affected function or code path.
+The bridge also accepts `message`, `summary`, or `explanation` as a
+non-empty text alias, including the `location` + `explanation` format that
+surfaced in MSS-008. The guard validator and GitHub review renderer use the
+same normalization to avoid dropping legitimate blocking findings.
+
+A queue record marked `withheld` is terminal and cannot be claimed directly.
+Before recovering one, confirm its exact PR head is still current, its original
+review observation is fresh, and GitHub has no completed trusted review on that
+head. An operator can explicitly reset **that same row** to `retryable` with an
+audited, tightly scoped database update, then manually run the existing
+`Autonomous PR Review Bridge` workflow on `master` with its queue UUID and
+`mode=live`. Do not insert a second verdict for the same head or silently
+rewrite the finding or `observed_at`; the unique live-verdict index protects
+against duplicate decisions. If the observation has expired, get a fresh
+independent review instead of changing its timestamp.

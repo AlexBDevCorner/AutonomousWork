@@ -10,6 +10,12 @@ export const OBSERVATION_MAX_AGE_MS = 3 * 60 * 60 * 1000;
 export const PROTOCOL_BLOB_SHA = 'f503c2fe085fafa666026923ff352b7140ea517e';
 const result = (status, reason, evidence = {}) => ({ status, reason, evidence });
 const word = x => typeof x === 'string' && x.trim().length > 0;
+// Keep validation and the posted GitHub review on the same finding-text contract.
+export function findingDescription(finding) {
+  if (!finding || typeof finding !== 'object') return null;
+  return [finding.description, finding.message, finding.summary, finding.explanation]
+    .find(word) ?? null;
+}
 const lower = x => String(x ?? '').toLowerCase();
 export const isUuid = x => typeof x === 'string' && UUID.test(x);
 export const terminal = value => TERMINAL.has(value);
@@ -115,7 +121,7 @@ export function parseControlPin(prBody, expectedRepository) {
 
 function documentedBlockingFindings(findings) {
   const blocks = findings.filter(f => f && typeof f === 'object' && ['P0','P1'].includes(f.severity));
-  return blocks.length > 0 && blocks.every(f => word(f.description ?? f.message ?? f.summary) &&
+  return blocks.length > 0 && blocks.every(f => findingDescription(f) &&
     ((word(f.path) && Number.isSafeInteger(f.line) && f.line > 0) || word(f.location)));
 }
 
