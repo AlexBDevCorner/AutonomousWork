@@ -163,6 +163,20 @@ test('documented blocking findings authorize only a REQUEST_CHANGES dry-run', ()
   assert.equal(validateGitHub(observed({
     row: { ...row(), verdict: 'REQUEST_CHANGES', findings: [scheduledFinding] },
   })).status, 'dry_run');
+  // Regression: MSS-016 supplied a detailed reproduction and consequence rather
+  // than a field named explanation; do not withhold legitimate P1 findings.
+  const reproduced = {
+    severity: 'P1', path: 'src/Qualifier.cs', location: 'RunUnderLockAsync',
+    title: 'Winner not assigned', reproduction: 'A challenger wins but remains in the feeder league.',
+    consequence: 'The next-season Superleague roster is incorrect.',
+  };
+  assert.equal(validateGitHub(observed({
+    row: { ...row(), verdict: 'REQUEST_CHANGES', findings: [reproduced] },
+  })).status, 'dry_run');
+  assert.equal(validateGitHub(observed({
+    row: { ...row(), verdict: 'REQUEST_CHANGES',
+      findings: [{ ...reproduced, consequence: '' }] },
+  })).reason, 'no_documented_blocking_findings');
   assert.equal(validateGitHub(observed({
     row: { ...row(), verdict: 'REQUEST_CHANGES',
       findings: [{ ...scheduledFinding, explanation: '   ' }] },
