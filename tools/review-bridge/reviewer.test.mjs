@@ -141,6 +141,23 @@ test('scheduled location + explanation P1 is included in the submitted GitHub re
   assert.equal(writes.calls.some(c=>c.url.endsWith('/merge')),false);
 });
 
+test('reproduction plus consequence P1 posts the full explanation',async()=>{
+  const row=makeRow();
+  row.findings=[{
+    severity:'P1',path:'src/Qualifier.cs',location:'RunUnderLockAsync',
+    title:'Wrong qualifier roster',reproduction:'A challenger wins but stays in a feeder.',
+    consequence:'The next Superleague roster ignores qualifier results.',
+  }];
+  const mock=apiMock(),q=queueMock(row),writes=writeMock(mock);
+  const done=await runReviewer({queue:q,api:mock.api,reviewerToken:'human',
+    mergeToken:'app',id,fetcher:writes.fetcher,evaluator});
+  assert.equal(done.status,'applied');
+  const review=writes.calls.find(c=>c.url.endsWith('/pulls/4/reviews'));
+  assert.match(review.body.body,/A challenger wins but stays in a feeder/);
+  assert.match(review.body.body,/Consequence: The next Superleague roster ignores qualifier results/);
+  assert.equal(writes.calls.some(c=>c.url.endsWith('/merge')),false);
+});
+
 test('a real APPROVE POST is followed by fresh independent guarded GitHub merge',async()=>{
   const row=makeRow('APPROVE'),mock=apiMock(),q=queueMock(row),writes=writeMock(mock);
   const done=await runReviewer({queue:q,api:mock.api,reviewerToken:'human',

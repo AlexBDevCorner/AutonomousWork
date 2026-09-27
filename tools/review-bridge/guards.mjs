@@ -13,8 +13,14 @@ const word = x => typeof x === 'string' && x.trim().length > 0;
 // Keep validation and the posted GitHub review on the same finding-text contract.
 export function findingDescription(finding) {
   if (!finding || typeof finding !== 'object') return null;
-  return [finding.description, finding.message, finding.summary, finding.explanation]
-    .find(word) ?? null;
+  const narrative = [finding.description, finding.message, finding.summary, finding.explanation].find(word);
+  if (narrative) return narrative;
+  // Some scheduled reviewers document a concrete reproduction and consequence instead of
+  // using a generic explanation field. Require both, and preserve both in the posted review.
+  if (word(finding.reproduction) && word(finding.consequence))
+    return [finding.title, finding.reproduction, 'Consequence: ' + finding.consequence]
+      .filter(word).join(' ');
+  return null;
 }
 const lower = x => String(x ?? '').toLowerCase();
 export const isUuid = x => typeof x === 'string' && UUID.test(x);
