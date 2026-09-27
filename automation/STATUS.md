@@ -30,7 +30,7 @@ Automatic execution: enabled.
 | mtgsolosports | MSS-014 | done | [#16](https://github.com/AlexBDevCorner/MtgSoloSports/pull/16) | 1 / 0 / 0 | success |
 | mtgsolosports | MSS-015 | done | [#17](https://github.com/AlexBDevCorner/MtgSoloSports/pull/17) | 1 / 0 / 0 | success |
 | mtgsolosports | MSS-016 | done | [#18](https://github.com/AlexBDevCorner/MtgSoloSports/pull/18) | 2 / 1 / 0 | success |
-| mtgsolosports | MSS-017 | in_progress |  | 1 / 0 / 0 | pending |
+| mtgsolosports | MSS-017 | review | [#19](https://github.com/AlexBDevCorner/MtgSoloSports/pull/19) | 1 / 0 / 0 | success |
 | repomanager | RM-003 | done | [#22](https://github.com/AlexBDevCorner/RepoManager/pull/22) | 4 / 0 / 0 | success |
 | repomanager | RM-004 | done | [#23](https://github.com/AlexBDevCorner/RepoManager/pull/23) | 2 / 0 / 0 | success |
 | repomanager | RM-005 | done | [#25](https://github.com/AlexBDevCorner/RepoManager/pull/25) | 2 / 0 / 0 | success |
