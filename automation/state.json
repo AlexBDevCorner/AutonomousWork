@@ -1868,7 +1868,10 @@
           "completedAt": null
         }
       ],
-      "blockReason": null
+      "blockReason": null,
+      "pr": 48,
+      "headSha": "7eaa933b3ede1304dd48163f3016f39182938e4e",
+      "prUrl": "https://github.com/AlexBDevCorner/MtgSoloSports/pull/48"
     }
   ]
 }
