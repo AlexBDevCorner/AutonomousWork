@@ -1918,7 +1918,10 @@
           "completedAt": null
         }
       ],
-      "blockReason": null
+      "blockReason": null,
+      "pr": 50,
+      "headSha": "ad8ecdd326f27af6912a81880e743aa962a8243e",
+      "prUrl": "https://github.com/AlexBDevCorner/MtgSoloSports/pull/50"
     }
   ]
 }
