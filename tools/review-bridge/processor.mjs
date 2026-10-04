@@ -45,6 +45,33 @@ export class QueueApi {
     if (!response.ok) throw new Error('Queue API ' + method + ' returned HTTP ' + response.status);
     return response.json();
   }
+  async recoverable(limit = 10) {
+    if (this.mode !== "live") throw new Error("Recovery listing is live-only");
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 25)
+      throw new Error("Invalid recovery limit");
+    const url = new URL(EDGE);
+    url.searchParams.set("mode", "live");
+    url.searchParams.set("action", "recoverable");
+    url.searchParams.set("limit", String(limit));
+    const response = await this.fetcher(url, {
+      method: "GET",
+      redirect: "error",
+      headers: {
+        "x-review-bridge-queue-token": this.token,
+        Accept: "application/json",
+      },
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!response.ok) throw new Error("Queue recovery GET returned HTTP " + response.status);
+    const payload = await response.json();
+    if (!Array.isArray(payload?.ids) ||
+        payload.ids.some(id => !isUuid(id)) ||
+        new Set(payload.ids).size !== payload.ids.length ||
+        payload.ids.length > limit) {
+      throw new Error("Malformed recovery queue response");
+    }
+    return payload.ids;
+  }
   async get(id) {
     const payload = await this.request('GET', id);
     if (!payload) return null;

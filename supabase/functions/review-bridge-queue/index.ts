@@ -61,7 +61,59 @@ Deno.serve(async (request: Request): Promise<Response> => {
       const url = new URL(request.url);
       const id = url.searchParams.get("id");
       const live = url.searchParams.get("mode") === "live";
-      if (!id || !UUID.test(id) || (url.searchParams.has("mode") && !live) ||
+      const action = url.searchParams.get("action");
+
+      if (action === "recoverable") {
+        const limitValue = Number(url.searchParams.get("limit") ?? "10");
+        if (!live || id !== null || !Number.isSafeInteger(limitValue) ||
+            limitValue < 1 || limitValue > 25 ||
+            [...url.searchParams.keys()].some((k) => !["action", "mode", "limit"].includes(k))) {
+          return response(422, { error: "invalid recovery query" });
+        }
+
+        const cutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+        const now = new Date().toISOString();
+        const common = {
+          select: "id",
+          test_only: "eq.false",
+          source: "eq.chatgpt-scheduled",
+          attempts: "lt.4",
+          order: "updated_at.asc",
+          limit: String(limitValue),
+        };
+        const pendingQuery = new URLSearchParams({
+          ...common,
+          status: "in.(queued,retryable)",
+          updated_at: "lt." + cutoff,
+        });
+        const expiredQuery = new URLSearchParams({
+          ...common,
+          status: "eq.processing",
+          lease_until: "lt." + now,
+        });
+        const [pendingResponse, expiredResponse] = await Promise.all([
+          postgres(QUEUE + "?" + pendingQuery, dbKey),
+          postgres(QUEUE + "?" + expiredQuery, dbKey),
+        ]);
+        if (!pendingResponse.ok || !expiredResponse.ok) {
+          throw new Error("database recovery read failed");
+        }
+        const [pendingRows, expiredRows] = await Promise.all([
+          pendingResponse.json(),
+          expiredResponse.json(),
+        ]);
+        if (!Array.isArray(pendingRows) || !Array.isArray(expiredRows)) {
+          throw new Error("database returned non-array");
+        }
+        const ids = [...pendingRows, ...expiredRows]
+          .map((row) => object(row) ? row.id : null)
+          .filter((value): value is string => typeof value === "string" && UUID.test(value));
+        const unique = [...new Set(ids)].slice(0, limitValue);
+        return response(200, { ids: unique });
+      }
+
+      if (action !== null || !id || !UUID.test(id) ||
+          (url.searchParams.has("mode") && !live) ||
           [...url.searchParams.keys()].some((k) => !["id", "mode"].includes(k))) {
         return response(422, { error: "invalid queue UUID" });
       }
