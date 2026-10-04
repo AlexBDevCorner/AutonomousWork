@@ -3,6 +3,8 @@ name: Autonomous PR Review Bridge
 on:
   repository_dispatch:
     types: [autonomous_review_test_inserted, autonomous_review_inserted]
+  schedule:
+    - cron: "*/5 * * * *"
   workflow_dispatch:
     inputs:
       queue_id:
@@ -119,3 +121,60 @@ jobs:
           REVIEW_BRIDGE_QUEUE_TOKEN: ${{ secrets.REVIEW_BRIDGE_QUEUE_TOKEN }}
           AUTONOMOUS_REVIEWER_TOKEN: ${{ secrets.AUTONOMOUS_REVIEWER_TOKEN }}
         run: node tools/review-bridge/reviewer.mjs
+
+  # Reconciles queue rows whose INSERT dispatch was lost, workers that returned
+  # retryable, and expired processing leases. Atomic database claims keep this
+  # safe if the original repository_dispatch arrives late.
+  recover-stuck:
+    if: >-
+      github.event_name == 'schedule' &&
+      github.ref == 'refs/heads/master' &&
+      vars.AUTONOMOUS_REVIEW_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: master
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run review and recovery tests
+        run: node --test tools/review-bridge/*.test.mjs
+      - name: Obtain cross-repo READ-ONLY worker App token
+        id: recovery-read-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.AUTONOMOUS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTONOMOUS_APP_PRIVATE_KEY }}
+          owner: AlexBDevCorner
+          repositories: |
+            AutonomousWork
+            RepoManager
+            MandarinBotNet
+            MtgSoloSports
+          permission-contents: read
+          permission-pull-requests: read
+          permission-checks: read
+      - name: Obtain MERGE worker App token
+        id: recovery-merge-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.AUTONOMOUS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTONOMOUS_APP_PRIVATE_KEY }}
+          owner: AlexBDevCorner
+          repositories: |
+            RepoManager
+            MandarinBotNet
+            MtgSoloSports
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Recover stranded live review rows
+        env:
+          READ_GH_TOKEN: ${{ steps.recovery-read-token.outputs.token }}
+          MERGE_GH_TOKEN: ${{ steps.recovery-merge-token.outputs.token }}
+          REVIEW_BRIDGE_QUEUE_TOKEN: ${{ secrets.REVIEW_BRIDGE_QUEUE_TOKEN }}
+          AUTONOMOUS_REVIEWER_TOKEN: ${{ secrets.AUTONOMOUS_REVIEWER_TOKEN }}
+          AUTONOMOUS_REVIEW_ENABLED: ${{ vars.AUTONOMOUS_REVIEW_ENABLED }}
+        run: node tools/review-bridge/recovery.mjs
