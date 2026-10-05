@@ -2111,7 +2111,11 @@
           "kind": "implementation",
           "startedAt": "2026-10-05T19:10:26.674Z",
           "sourceControlSha": "c5795728539f8fd0030f17def30fc0cef6bd9c74",
-          "dispatchStatus": "sent"
+          "dispatchStatus": "sent",
+          "runId": 37361598760,
+          "runUrl": "https://github.com/AlexBDevCorner/MtgSoloSports/actions/runs/37361598760",
+          "conclusion": null,
+          "completedAt": null
         }
       ],
       "blockReason": null
