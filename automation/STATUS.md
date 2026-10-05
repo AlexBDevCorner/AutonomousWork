@@ -69,7 +69,7 @@ Automatic execution: enabled.
 | mtgsolosports | MSS-053 | done | [#55](https://github.com/AlexBDevCorner/MtgSoloSports/pull/55) | 1 / 0 / 0 | success |
 | mtgsolosports | MSS-054 | done | [#56](https://github.com/AlexBDevCorner/MtgSoloSports/pull/56) | 1 / 0 / 0 | success |
 | mtgsolosports | MSS-055 | done | [#57](https://github.com/AlexBDevCorner/MtgSoloSports/pull/57) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-056 | in_progress |  | 1 / 0 / 0 | pending |
+| mtgsolosports | MSS-056 | blocked |  | 1 / 0 / 0 | worker_succeeded_without_pull_request |
 | repomanager | RM-003 | done | [#22](https://github.com/AlexBDevCorner/RepoManager/pull/22) | 4 / 0 / 0 | success |
 | repomanager | RM-004 | done | [#23](https://github.com/AlexBDevCorner/RepoManager/pull/23) | 2 / 0 / 0 | success |
 | repomanager | RM-005 | done | [#25](https://github.com/AlexBDevCorner/RepoManager/pull/25) | 2 / 0 / 0 | success |
