@@ -220,6 +220,26 @@ test('explicit blocked retry preserves history and appends a new implementation 
   assert.match(f.calls[0][4][f.catalog.tasks[0].relativePath], /status: in_progress/);
 });
 
+test('normal apply automatically retries an observed recoverable worker failure', async () => {
+  const f = fixture();
+  f.catalog.tasks[0].status = 'blocked';
+  f.taskTexts[f.catalog.tasks[0].relativePath] = Object.values(f.taskTexts)[0].replace('status: ready', 'status: blocked');
+  const oldId = '00000000-0000-0000-0000-000000000099';
+  const e = { ...record(), status: 'blocked', blockReason: 'worker_failure' };
+  e.attempts[0] = { ...e.attempts[0], id: oldId, runId: 8, conclusion: 'failure', completedAt: new Date(now).toISOString() };
+  f.state.executions = [e];
+  f.snapshot.prs = [pr({ draft: true })];
+
+  const result = await coordinate({ ...f, apply: true });
+  const retried = result.state.executions[0];
+  assert.equal(retried.status, 'in_progress');
+  assert.equal(retried.blockReason, null);
+  assert.equal(retried.attempts.length, 2);
+  assert.equal(retried.attempts[0].id, oldId);
+  assert.equal(retried.attempts[1].id, id);
+  assert.deepEqual(f.calls.map(c => c[0]), ['commit', 'dispatch', 'commit']);
+});
+
 test('explicit retry fails closed instead of dispatching unrelated work', async () => {
   const f = fixture();
   await assert.rejects(() => coordinate({ ...f, apply: true, retryTaskId: 'RM-999' }), /not eligible/);
