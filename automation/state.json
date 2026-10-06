@@ -2236,12 +2236,16 @@
           "sourceControlSha": "d0fab4232b01cfb5185ba73fea621acf15282ef4",
           "dispatchStatus": "sent",
           "reason": "ci_repair",
-          "headSha": "fad09320c6f0ecdcc1224694589467061106809e"
+          "headSha": "fad09320c6f0ecdcc1224694589467061106809e",
+          "runId": 37500303492,
+          "runUrl": "https://github.com/AlexBDevCorner/MtgSoloSports/actions/runs/37500303492",
+          "conclusion": null,
+          "completedAt": null
         }
       ],
       "blockReason": null,
       "pr": 62,
-      "headSha": "fad09320c6f0ecdcc1224694589467061106809e",
+      "headSha": "ad916f27e6df134ea688bd949b4c60bad1617c5d",
       "prUrl": "https://github.com/AlexBDevCorner/MtgSoloSports/pull/62"
     }
   ]
