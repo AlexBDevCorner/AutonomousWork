@@ -23,7 +23,7 @@
   "maxAttempts": 5,
   "maxCorrectionRounds": 3,
   "dispatchGraceMinutes": 15,
-  "maxRunMinutes": 135,
+  "maxRunMinutes": 275,
   "reviewers": [
     "AlexBDevCorner",
     "autonomousworkdispatcher[bot]"
