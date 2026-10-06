@@ -70,9 +70,13 @@ export async function coordinate({ catalog, state: initial, config, sourceSha, t
     state.executions[i] = next;
     status(next, next.status);
   }
+  const automaticRetry = retryTaskId ? null : state.executions
+    .map(e => chooseRetry(e.taskId, model, state, snapshots, config, now))
+    .filter(Boolean)
+    .sort((a, b) => b.task.priority - a.task.priority || a.task.id.localeCompare(b.task.id, 'en'))[0] ?? null;
   const selected = retryTaskId
     ? chooseRetry(retryTaskId, model, state, snapshots, config, now)
-    : chooseWork(model, state, snapshots, config, now);
+    : automaticRetry ?? chooseWork(model, state, snapshots, config, now);
   if (retryTaskId && !selected)
     throw new Error(`Blocked task ${retryTaskId} is not eligible for a bounded implementation retry.`);
   async function save(message) {
