@@ -14,6 +14,12 @@ const apiRoot = row => {
 const SHA = /^[a-f0-9]{40}$/;
 const REASON = /^[a-z0-9_]+$/;
 const MAX_BODY = 4000;
+const PERSONAL_REVIEWER = 'AlexBDevCorner';
+const APP_REVIEWER = 'autonomousworkdispatcher[bot]';
+const lower = value => String(value ?? '').toLowerCase();
+const TRUSTED_REVIEWERS = new Set([PERSONAL_REVIEWER, APP_REVIEWER].map(lower));
+const trustedReviewer = (login, author) =>
+  TRUSTED_REVIEWERS.has(lower(login)) && lower(login) !== lower(author);
 
 const result = (status, reason, evidence = {}, extra = {}) => ({status,reason,evidence,...extra});
 export const safeReason = e => String(e?.message ?? 'unknown').replace(/https?:\/\/\S+/g,'[url]').slice(0,350);
@@ -67,7 +73,7 @@ export async function identity(fetcher, token) {
   } catch { throw Error('Unable to verify human reviewer identity'); }
   if(!response.ok)throw Error('Reviewer identity HTTP '+response.status);
   const user=await response.json();
-  if(user?.login!=='AlexBDevCorner')throw Error('PAT is not the configured independent reviewer');
+  if(user?.login!==PERSONAL_REVIEWER)throw Error('PAT is not the configured independent reviewer');
   return user.login;
 }
 export async function githubWrite({fetcher, token, path, method, body}) {
@@ -91,8 +97,11 @@ export async function githubWrite({fetcher, token, path, method, body}) {
   const value=await response.json();
   return value;
 }
-export async function submitReview({api,fetcher,token,row}) {
-  const reviewer=await identity(fetcher,token);
+export async function submitReview({api,fetcher,token,row,
+  expectedReviewer=PERSONAL_REVIEWER,verifyIdentity=expectedReviewer===PERSONAL_REVIEWER}) {
+  if(!TRUSTED_REVIEWERS.has(lower(expectedReviewer)))throw Error('Unrecognized review actor');
+  const reviewer=verifyIdentity ? await identity(fetcher,token) : expectedReviewer;
+  if(!token)throw Error('Review token missing');
   const payload=await githubWrite({
     fetcher,token,path:apiRoot(row)+'/pulls/'+row.pr_number+'/reviews',method:'POST',
     body:{commit_id:row.reviewed_sha,event:reviewEvent(row.verdict),body:reviewText(row)},
@@ -143,7 +152,7 @@ export async function alreadyReviewed({api,row}) {
     api.pages(apiRoot(row)+'/pulls/'+row.pr_number+'/reviews'),
   ]);
   const want=row.verdict==='APPROVE'?'APPROVED':'CHANGES_REQUESTED';
-  const trusted=reviews.filter(r=>r.user?.login==='AlexBDevCorner'&&
+  const trusted=reviews.filter(r=>trustedReviewer(r.user?.login,pr?.user?.login)&&
     r.commit_id===row.reviewed_sha&&
     ['APPROVED','CHANGES_REQUESTED'].includes(r.state)&&
     Number.isSafeInteger(r.id)&&Number.isFinite(Date.parse(r.submitted_at)));
@@ -165,8 +174,8 @@ export async function alreadyMerged({api,row}) {
      pr.head?.sha!==row.reviewed_sha||pr.head?.ref!=='autonomous/'+row.task_id||
      pr.head?.repo?.full_name!==row.repository||
      pr.base?.repo?.full_name!==row.repository||!['main','master'].includes(pr.base?.ref)||
-     pr.user?.login==='AlexBDevCorner')return null;
-  const trusted=reviews.filter(r=>r.user?.login==='AlexBDevCorner'&&
+     !TRUSTED_REVIEWERS.has(lower(pr.user?.login)))return null;
+  const trusted=reviews.filter(r=>trustedReviewer(r.user?.login,pr.user.login)&&
     r.commit_id===row.reviewed_sha&&
     ['APPROVED','CHANGES_REQUESTED'].includes(r.state)&&
     Number.isSafeInteger(r.id)&&Number.isFinite(Date.parse(r.submitted_at)));
@@ -205,7 +214,14 @@ export async function runReviewer({queue,api,reviewerToken,mergeToken,id,
       const fresh=await evaluator({api,row,now:clock(),live:true});
       if(fresh.status==='dry_run'&&fresh.reason===before.reason &&
          fresh.evidence?.control_sha===before.evidence?.control_sha) {
-        reviewId=await submitReview({api,fetcher,token:reviewerToken,row});
+        const pr=await api.request('GET',apiRoot(row)+'/pulls/'+row.pr_number);
+        const useAppReviewer=lower(pr?.user?.login)===lower(PERSONAL_REVIEWER);
+        reviewId=await submitReview({
+          api,fetcher,row,
+          token:useAppReviewer ? mergeToken : reviewerToken,
+          expectedReviewer:useAppReviewer ? APP_REVIEWER : PERSONAL_REVIEWER,
+          verifyIdentity:!useAppReviewer,
+        });
         report=result('applied','review_posted',{reviewed_sha:row.reviewed_sha}, {review_id:reviewId});
       } else report=fresh;
     }

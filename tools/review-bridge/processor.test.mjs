@@ -26,7 +26,7 @@ const config = () => ({
   },
   maxAttempts: 5, maxCorrectionRounds: 3,
   dispatchGraceMinutes: 15, maxRunMinutes: 135,
-  reviewers: ['AlexBDevCorner'], requiredChecks: ['build-and-test'],
+  reviewers: ['AlexBDevCorner', 'autonomousworkdispatcher[bot]'], requiredChecks: ['build-and-test'],
 });
 const state = () => ({
   version: 1, executions: [{
@@ -70,6 +70,16 @@ test('normal eligible exact-head test-only approval becomes dry_run, no GitHub w
   assert.equal(validateRecord(row(), ID, NOW), null);
   assert.deepEqual(validateGitHub(observed()).status, 'dry_run');
   assert.deepEqual(validateGitHub(observed()).reason, 'review_guards_passed_no_mutation');
+});
+
+test('manual operator PR remains reviewable only through a different configured actor', () => {
+  const manual = pr(); manual.user.login = 'AlexBDevCorner';
+  assert.equal(validateGitHub(observed({ pr: manual, openPrs: [manual] })).status, 'dry_run');
+  const personalOnly = config(); personalOnly.reviewers = ['AlexBDevCorner'];
+  assert.equal(validateGitHub(observed({ pr: manual, openPrs: [manual], config: personalOnly })).reason,
+    'no_separate_trusted_reviewer');
+  const botReview = review({ user: { login: 'autonomousworkdispatcher[bot]' } });
+  assert.equal(latestTrustedReview([botReview], config().reviewers, HEAD, 'AlexBDevCorner')?.state, 'APPROVED');
 });
 test('reject malformed UUID, forged source, non-test data, and future observation', () => {
   assert.ok(isUuid(ID));

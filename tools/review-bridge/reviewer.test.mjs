@@ -24,8 +24,8 @@ const pr=(overrides={})=>({
   base:{ref:'main',repo:{full_name:'AlexBDevCorner/MtgSoloSports'}},
   ...overrides,
 });
-const completedReview=(state='APPROVED')=>({
-  id:999,commit_id:sha,user:{login:'AlexBDevCorner'},
+const completedReview=(state='APPROVED',reviewer='AlexBDevCorner')=>({
+  id:999,commit_id:sha,user:{login:reviewer},
   state,submitted_at:new Date().toISOString(),
 });
 const apiMock=({initialPr=pr(),initialReviews=[]}={})=>{
@@ -60,11 +60,13 @@ function queueMock(row) {
 }
 function writeMock(mock) {
   const calls=[];const fetcher=async (url,options)=>{
-    calls.push({url,method:options.method,body:options.body?JSON.parse(options.body):null});
+    calls.push({url,method:options.method,auth:options.headers?.Authorization,body:options.body?JSON.parse(options.body):null});
     if(url.endsWith('/user'))return {ok:true,json:async()=>({login:'AlexBDevCorner'})};
     if(url.endsWith('/pulls/4/reviews')){
+      const actor=options.headers?.Authorization==='Bearer app'
+        ? 'autonomousworkdispatcher[bot]' : 'AlexBDevCorner';
       mock.reviews.push(completedReview(
-        JSON.parse(options.body).event==='APPROVE'?'APPROVED':'CHANGES_REQUESTED'));
+        JSON.parse(options.body).event==='APPROVE'?'APPROVED':'CHANGES_REQUESTED',actor));
       return {ok:true,json:async()=>mock.reviews.at(-1)};
     }
     if(url.endsWith('/pulls/4/merge')){
@@ -167,6 +169,20 @@ test('a real APPROVE POST is followed by fresh independent guarded GitHub merge'
   assert.equal(done.review_id,999);
   assert.equal(writes.calls.find(c=>c.url.endsWith('/merge')).body.sha,sha);
   assert.equal(writes.calls.find(c=>c.url.endsWith('/merge')).body.merge_method,'merge');
+});
+
+test('a manually authored PR is reviewed by the worker App, never by its author',async()=>{
+  const row=makeRow('APPROVE');
+  const manualPr=pr({user:{login:'AlexBDevCorner'}});
+  const mock=apiMock({initialPr:manualPr}),q=queueMock(row),writes=writeMock(mock);
+  const done=await runReviewer({queue:q,api:mock.api,reviewerToken:'human',
+    mergeToken:'app',id,fetcher:writes.fetcher,evaluator});
+  assert.equal(done.status,'applied');
+  assert.equal(done.merge_sha,mergeSha);
+  const review=writes.calls.find(c=>c.url.endsWith('/pulls/4/reviews'));
+  assert.equal(review.auth,'Bearer app');
+  assert.equal(mock.reviews.at(-1).user.login,'autonomousworkdispatcher[bot]');
+  assert.equal(writes.calls.some(c=>c.url.endsWith('/user')&&c.auth==='Bearer app'),false);
 });
 
 test('a lost merge acknowledgement recovers from existing GitHub approval and merge',async()=>{

@@ -25,7 +25,8 @@
   "dispatchGraceMinutes": 15,
   "maxRunMinutes": 135,
   "reviewers": [
-    "AlexBDevCorner"
+    "AlexBDevCorner",
+    "autonomousworkdispatcher[bot]"
   ],
   "requiredChecks": [
     "build-and-test"
