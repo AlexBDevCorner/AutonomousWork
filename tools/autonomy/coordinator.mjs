@@ -88,9 +88,13 @@ export async function coordinate({ catalog, state: initial, config, sourceSha, t
   if (selected && apply) {
     // Re-observe the target immediately before claiming. Worker repeats the guard after queueing.
     snapshots[selected.project.id] = await api.snapshot(selected.project.repository, config.projects[selected.project.id], state.executions.filter(e => e.projectId === selected.project.id));
+    const freshAutomaticRetry = retryTaskId ? null : state.executions
+      .map(e => chooseRetry(e.taskId, model, state, snapshots, config, now))
+      .filter(Boolean)
+      .sort((a, b) => b.task.priority - a.task.priority || a.task.id.localeCompare(b.task.id, 'en'))[0] ?? null;
     const fresh = retryTaskId
       ? chooseRetry(retryTaskId, model, state, snapshots, config, now)
-      : chooseWork(model, state, snapshots, config, now);
+      : freshAutomaticRetry ?? chooseWork(model, state, snapshots, config, now);
     if (!fresh || fresh.task.id !== selected.task.id || fresh.headSha !== selected.headSha ||
         fresh.reviewId !== selected.reviewId || fresh.reason !== selected.reason)
       throw new Error('Target changed during dispatch planning; no claim or dispatch made.');
