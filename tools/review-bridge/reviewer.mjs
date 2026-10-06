@@ -16,10 +16,10 @@ const REASON = /^[a-z0-9_]+$/;
 const MAX_BODY = 4000;
 const PERSONAL_REVIEWER = 'AlexBDevCorner';
 const APP_REVIEWER = 'autonomousworkdispatcher[bot]';
-const TRUSTED_REVIEWERS = new Set([PERSONAL_REVIEWER, APP_REVIEWER]);
 const lower = value => String(value ?? '').toLowerCase();
+const TRUSTED_REVIEWERS = new Set([PERSONAL_REVIEWER, APP_REVIEWER].map(lower));
 const trustedReviewer = (login, author) =>
-  TRUSTED_REVIEWERS.has(login) && lower(login) !== lower(author);
+  TRUSTED_REVIEWERS.has(lower(login)) && lower(login) !== lower(author);
 
 const result = (status, reason, evidence = {}, extra = {}) => ({status,reason,evidence,...extra});
 export const safeReason = e => String(e?.message ?? 'unknown').replace(/https?:\/\/\S+/g,'[url]').slice(0,350);
@@ -99,7 +99,7 @@ export async function githubWrite({fetcher, token, path, method, body}) {
 }
 export async function submitReview({api,fetcher,token,row,
   expectedReviewer=PERSONAL_REVIEWER,verifyIdentity=expectedReviewer===PERSONAL_REVIEWER}) {
-  if(!TRUSTED_REVIEWERS.has(expectedReviewer))throw Error('Unrecognized review actor');
+  if(!TRUSTED_REVIEWERS.has(lower(expectedReviewer)))throw Error('Unrecognized review actor');
   const reviewer=verifyIdentity ? await identity(fetcher,token) : expectedReviewer;
   if(!token)throw Error('Review token missing');
   const payload=await githubWrite({
@@ -174,7 +174,7 @@ export async function alreadyMerged({api,row}) {
      pr.head?.sha!==row.reviewed_sha||pr.head?.ref!=='autonomous/'+row.task_id||
      pr.head?.repo?.full_name!==row.repository||
      pr.base?.repo?.full_name!==row.repository||!['main','master'].includes(pr.base?.ref)||
-     !TRUSTED_REVIEWERS.has(pr.user?.login))return null;
+     !TRUSTED_REVIEWERS.has(lower(pr.user?.login)))return null;
   const trusted=reviews.filter(r=>trustedReviewer(r.user?.login,pr.user.login)&&
     r.commit_id===row.reviewed_sha&&
     ['APPROVED','CHANGES_REQUESTED'].includes(r.state)&&
