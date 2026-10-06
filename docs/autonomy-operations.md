@@ -15,17 +15,17 @@
    write permissions. Install it only on the participating repositories.
 4. The target still uses the existing `CONTROL_REPO_TOKEN` for private control
    reads and `OPENCODE_API_KEY` for OpenCode Go. Those are not copied into files.
-   GitHub authentication for the worker itself is a short-lived GitHub App
-   installation token minted in the run and supplied explicitly to the OpenCode
-   step with `use_github_token: true` (as both `GITHUB_TOKEN` and `GH_TOKEN`
-   for `gh`); no OIDC is required. The same token is wired into git through
-   the GitHub CLI credential helper (`gh auth setup-git`) by the workflow, so
-   ordinary `git push` works without persisting the raw token. The built-in
-   `GITHUB_TOKEN` is deliberately
-   not used for the OpenCode step: PRs it creates would leave `pull_request` CI
-   approval-required and stall unattended autonomy, while an App token lets CI
-   run automatically.
-   `CONTROL_REPO_TOKEN` and the worker App token serve different purposes
+   Long model sessions do not hold a GitHub App installation token: those tokens
+   expire too quickly for multi-hour workers. OpenCode works on the local
+   `autonomous/<task-id>` branch and remote git push is disabled during the
+   model step. The job-scoped `GITHUB_TOKEN` is available for repository/PR
+   inspection and the bounded disagreement-comment path, but remote publication
+   is owned by the workflow. After OpenCode exits (success, failure, or step
+   timeout), the workflow mints a fresh GitHub App installation token, preserves
+   any remaining local edits as a checkpoint, pushes the canonical task branch,
+   and creates/updates the task PR. App-authenticated publication ensures PR CI
+   events are emitted without depending on a token minted hours earlier.
+   `CONTROL_REPO_TOKEN` and the recovery App token serve different purposes
    and must remain separate.
    Provisioning required in the target repository: `vars.AUTONOMOUS_APP_CLIENT_ID`
    plus `secrets.AUTONOMOUS_APP_PRIVATE_KEY`. The GitHub App registration and
@@ -87,10 +87,14 @@ SHA and completion timestamp. Status and ledger writes are one Git commit.
 `review-queue.json`, containing PRs and exact head SHAs that need review. The
 queue is advisory; the reviewer must re-read GitHub before submitting a verdict.
 
-The current retry policy is intentionally conservative. Transient 5xx reads
-retry twice. A failed/uncertain dispatch is never resent automatically. It waits
-up to 15 minutes for a matching run, then blocks. A failed worker blocks even if
-it produced a partial PR. A correction normally must advance the PR head past
+The retry policy is bounded but self-healing. Transient 5xx reads retry twice.
+A failed/uncertain dispatch is never resent automatically because GitHub may have
+accepted the non-idempotent request before the client lost the response. It waits
+up to 15 minutes for a matching run, then blocks. By contrast, an observed worker
+run that completed as failure/cancelled/timed-out is safe to retry with a new
+claim: the reconciler automatically appends a fresh implementation attempt,
+reuses any same-task branch/PR, and retries up to `maxAttempts`. Partial progress
+is preserved by the target workflow before the failed run ends. A correction normally must advance the PR head past
 the reviewed SHA and then returns to review. The one intentional exception is an
 explicit developer disagreement: the worker leaves the reviewed head unchanged
 and posts a machine-readable `autonomous-review-disagreement:v1` PR comment
@@ -107,8 +111,10 @@ is complete. Per-task retry limits and single-active-task guards remain.
 
 For recovery, inspect the recorded run and PR first. Keep historical attempts;
 never delete the ledger to reset counters. A blocked implementation whose latest
-observed worker run ended in `failure`, `cancelled`, or `timed_out` can be
-retried only by an explicit operator request:
+observed worker run ended in `failure`, `cancelled`, or `timed_out` is
+normally retried automatically on the same reconciliation pass (or the next
+heartbeat) while the implementation-attempt budget remains. An explicit operator
+retry remains available when needed:
 
 ```sh
 node tools/autonomy/run.mjs --apply --retry RM-004
