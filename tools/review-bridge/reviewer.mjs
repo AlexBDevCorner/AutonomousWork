@@ -246,7 +246,17 @@ export async function runReviewer({queue,api,reviewerToken,mergeToken,id,
         report=result('applied','merge_confirmed',{reviewed_sha:row.reviewed_sha},
           {review_id:reviewId,merge_sha:mergeSha});
       } else if(row.verdict==='MERGE_CHECK')report=merge.decision;
-      // Approval remains useful when merge temporarily lacks eligibility.
+      else {
+        // The review is a durable useful result even when a fresh merge guard withholds.
+        // Record the actual merge decision so an applied APPROVE never looks like a
+        // mysterious review_posted row with merge_sha=null.
+        report=result('applied','review_posted_merge_withheld',{
+          reviewed_sha:row.reviewed_sha,
+          merge_guard_status:merge.decision?.status??'unknown',
+          merge_guard_reason:merge.decision?.reason??'unknown',
+          merge_guard_evidence:merge.decision?.evidence??{},
+        },{review_id:reviewId});
+      }
     }
     if(!report||!['applied','stale','withheld','failed'].includes(report.status)||
        !REASON.test(report.reason??''))throw Error('Unexpected review guard decision');
