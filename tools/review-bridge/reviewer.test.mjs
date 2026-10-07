@@ -171,6 +171,25 @@ test('a real APPROVE POST is followed by fresh independent guarded GitHub merge'
   assert.equal(writes.calls.find(c=>c.url.endsWith('/merge')).body.merge_method,'merge');
 });
 
+test('an applied APPROVE records the fresh merge guard reason when merge is withheld',async()=>{
+  const row=makeRow('APPROVE'),mock=apiMock(),q=queueMock(row),writes=writeMock(mock);
+  const blockedEvaluator=async ({row:observed})=>observed.verdict==='MERGE_CHECK'
+    ? {status:'withheld',reason:'merge_requires_green_ci',
+      evidence:{control_sha:controlSha,ci:'pending',latest_trusted_review_id:999}}
+    : evaluator({row:observed});
+  const done=await runReviewer({queue:q,api:mock.api,reviewerToken:'human',
+    mergeToken:'app',id,fetcher:writes.fetcher,evaluator:blockedEvaluator});
+  assert.equal(done.status,'applied');
+  assert.equal(done.reason,'review_posted_merge_withheld');
+  assert.equal(done.review_id,999);
+  assert.equal(done.merge_sha,null);
+  assert.equal(done.evidence.merge_guard_status,'withheld');
+  assert.equal(done.evidence.merge_guard_reason,'merge_requires_green_ci');
+  assert.equal(done.evidence.merge_guard_evidence.ci,'pending');
+  assert.equal(writes.calls.some(c=>c.url.endsWith('/merge')),false);
+  assert.equal(q.finishes.length,1);
+});
+
 test('a manually authored PR is reviewed by the worker App, never by its author',async()=>{
   const row=makeRow('APPROVE');
   const manualPr=pr({user:{login:'AlexBDevCorner'}});
