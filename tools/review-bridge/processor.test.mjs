@@ -104,7 +104,7 @@ test('reject recorded repository, PR, project, task status and protocol mismatch
   assert.equal(preflight({ taskText: task('ready') }).reason, 'task_spec_missing_or_status_mismatch');
   assert.equal(preflight({ protocolSha: '0'.repeat(40) }).reason, 'review_protocol_changed_reaudit_required');
 });
-test('blocked worker_failure is the only review exception and requires green CI', () => {
+test('blocked worker_failure is the only review exception and requires independent green CI plus approval to merge', () => {
   const blocked = state(); blocked.executions[0].status = 'blocked';
   blocked.executions[0].blockReason = 'worker_failure';
   const planning = preflight({ state: blocked, taskText: task('blocked') });
@@ -112,6 +112,14 @@ test('blocked worker_failure is the only review exception and requires green CI'
   assert.equal(validateGitHub(observed({ planning, checks: [check({ status: 'in_progress', conclusion: null })] })).reason,
     'worker_failure_exception_requires_green_ci');
   assert.equal(validateGitHub(observed({ planning })).status, 'dry_run');
+
+  const mergeRow = { ...row(), verdict: 'MERGE_CHECK' };
+  assert.equal(validateGitHub(observed({ planning, row: mergeRow, reviews: [] })).reason,
+    'merge_requires_latest_same_head_trusted_approval');
+  const merge = validateGitHub(observed({ planning, row: mergeRow, reviews: [review()] }));
+  assert.equal(merge.status, 'dry_run');
+  assert.equal(merge.reason, 'merge_guards_passed_no_mutation');
+
   blocked.executions[0].blockReason = 'merge_conflict';
   assert.equal(preflight({ state: blocked, taskText: task('blocked') }).reason,
     'execution_not_review_eligible');
