@@ -2326,7 +2326,7 @@
       "taskId": "MSS-062",
       "projectId": "mtgsolosports",
       "repository": "AlexBDevCorner/MtgSoloSports",
-      "status": "in_progress",
+      "status": "review",
       "attempts": [
         {
           "id": "74995ca1-3ad8-4b1a-bd87-08d0c50881d7",
@@ -2336,11 +2336,14 @@
           "dispatchStatus": "sent",
           "runId": 37559156484,
           "runUrl": "https://github.com/AlexBDevCorner/MtgSoloSports/actions/runs/37559156484",
-          "conclusion": null,
-          "completedAt": null
+          "conclusion": "success",
+          "completedAt": "2026-10-07T03:41:58Z"
         }
       ],
-      "blockReason": null
+      "blockReason": null,
+      "pr": 65,
+      "headSha": "efd29560ab214b14525cffb92ab32d01218edc3a",
+      "prUrl": "https://github.com/AlexBDevCorner/MtgSoloSports/pull/65"
     }
   ]
 }
