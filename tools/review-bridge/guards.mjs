@@ -176,7 +176,9 @@ export function validateGitHub({ row, config, planning, pr, openPrs, checks, rev
   if (planning.exceptional && ci !== 'green')
     return result('withheld', 'worker_failure_exception_requires_green_ci', evidence);
   if (row.verdict === 'MERGE_CHECK') {
-    if (planning.exceptional) return result('withheld', 'blocked_execution_cannot_merge', evidence);
+    // A worker_failure execution may still contain a fully recovered exact-head commit.
+    // Green CI plus a separate trusted approval are the independent post-recovery gates;
+    // do not permanently strand that reviewed commit just because the worker wrapper failed.
     if (ci !== 'green') return result('withheld', 'merge_requires_green_ci', evidence);
     if (!review || review.state !== 'APPROVED')
       return result('withheld', 'merge_requires_latest_same_head_trusted_approval', evidence);
