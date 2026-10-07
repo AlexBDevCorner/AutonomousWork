@@ -13,3 +13,4 @@ Manual recovery: restart dispatcher on current HEAD after MSS-036 task creation 
 Manual reconciliation requested for failed MSS-036 worker run #44 (2026-09-28).
 Self-healing retry trigger after long-worker hardening (2026-10-06).
 Retry dispatcher after automatic-retry revalidation fix (2026-10-06).
+Reconcile MSS-063 after recovered-worker merge guard fix (2026-10-07).
