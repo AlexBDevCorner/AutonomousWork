@@ -2369,7 +2369,7 @@
           "kind": "correction",
           "startedAt": "2026-10-07T05:50:19.055Z",
           "sourceControlSha": "4c2af8a63ea173d84aa29f24d97e94ab25913765",
-          "dispatchStatus": "pending",
+          "dispatchStatus": "sent",
           "reviewId": 5438117304,
           "headSha": "2f8b10bd9ffcf0808a572aace195eae7fc3639d6"
         }
