@@ -20,8 +20,8 @@
       "reviewEnabled": true
     }
   },
-  "maxAttempts": 5,
-  "maxCorrectionRounds": 3,
+  "maxAttempts": 10,
+  "maxCorrectionRounds": 15,
   "dispatchGraceMinutes": 15,
   "maxRunMinutes": 275,
   "reviewers": [
