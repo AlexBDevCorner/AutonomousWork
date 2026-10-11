@@ -15,7 +15,7 @@ Automatic execution: enabled.
 | mandarinbotnet | MB-009 | done | [#62](https://github.com/AlexBDevCorner/MandarinBotNet/pull/62) | 1 / 0 / 0 | pending |
 | mandarinbotnet | MB-010 | done | [#63](https://github.com/AlexBDevCorner/MandarinBotNet/pull/63) | 2 / 0 / 0 | success |
 | mandarinbotnet | MB-011 | done | [#66](https://github.com/AlexBDevCorner/MandarinBotNet/pull/66) | 3 / 2 / 0 | success |
-| mandarinbotnet | MB-012 | review | [#67](https://github.com/AlexBDevCorner/MandarinBotNet/pull/67) | 4 / 3 / 0 | success |
+| mandarinbotnet | MB-012 | in_progress | [#67](https://github.com/AlexBDevCorner/MandarinBotNet/pull/67) | 5 / 4 / 0 | pending |
 | mtgsolosports | MSS-001 | done | [#3](https://github.com/AlexBDevCorner/MtgSoloSports/pull/3) | 1 / 0 / 0 | success |
 | mtgsolosports | MSS-002 | done | [#4](https://github.com/AlexBDevCorner/MtgSoloSports/pull/4) | 2 / 1 / 0 | success |
 | mtgsolosports | MSS-003 | done | [#5](https://github.com/AlexBDevCorner/MtgSoloSports/pull/5) | 1 / 0 / 0 | success |
