@@ -2909,7 +2909,7 @@
       "taskId": "MB-012",
       "projectId": "mandarinbotnet",
       "repository": "AlexBDevCorner/MandarinBotNet",
-      "status": "in_progress",
+      "status": "review",
       "attempts": [
         {
           "id": "c81d3331-4d95-47e7-9456-e1e34eb64ae9",
@@ -2942,12 +2942,16 @@
           "sourceControlSha": "54cecd31d366b271bb9338d77e44ab1b2b6c935c",
           "dispatchStatus": "sent",
           "reviewId": 5484310019,
-          "headSha": "cb687e2e2ce2f50aa842f88980f164e97917027e"
+          "headSha": "cb687e2e2ce2f50aa842f88980f164e97917027e",
+          "runId": 38162046963,
+          "runUrl": "https://github.com/AlexBDevCorner/MandarinBotNet/actions/runs/38162046963",
+          "conclusion": "success",
+          "completedAt": "2026-10-11T18:06:35Z"
         }
       ],
       "blockReason": null,
       "pr": 67,
-      "headSha": "cb687e2e2ce2f50aa842f88980f164e97917027e",
+      "headSha": "0740c44d69bce04f813650c41c84a03bc3ff42a3",
       "prUrl": "https://github.com/AlexBDevCorner/MandarinBotNet/pull/67"
     },
     {
