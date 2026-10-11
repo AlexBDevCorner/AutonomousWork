@@ -2762,7 +2762,7 @@
           "kind": "correction",
           "startedAt": "2026-10-11T12:30:32.381Z",
           "sourceControlSha": "fda15275445c57cf915954df459d21e6f8851515",
-          "dispatchStatus": "pending",
+          "dispatchStatus": "sent",
           "reviewId": 5483287810,
           "headSha": "7c3b9df2094be978434a5f6cb39ebe24e2377312"
         }
