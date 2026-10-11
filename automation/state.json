@@ -2800,7 +2800,7 @@
           "kind": "correction",
           "startedAt": "2026-10-11T14:20:17.373Z",
           "sourceControlSha": "9bd08daf9185d0cdaaf9043877c68e550851b81f",
-          "dispatchStatus": "pending",
+          "dispatchStatus": "sent",
           "reviewId": 5483621839,
           "headSha": "8b4540c728b6d17e5c9222406139fee95ab3d4f1"
         }
