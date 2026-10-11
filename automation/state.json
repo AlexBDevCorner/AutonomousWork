@@ -2953,7 +2953,7 @@
           "kind": "correction",
           "startedAt": "2026-10-11T18:40:26.910Z",
           "sourceControlSha": "619eb9fd6ebc3fb89e1124d224be2ad4115a12e8",
-          "dispatchStatus": "pending",
+          "dispatchStatus": "sent",
           "reviewId": 5484429297,
           "headSha": "0740c44d69bce04f813650c41c84a03bc3ff42a3"
         }
