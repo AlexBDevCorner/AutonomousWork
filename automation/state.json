@@ -2833,7 +2833,7 @@
       "taskId": "MB-011",
       "projectId": "mandarinbotnet",
       "repository": "AlexBDevCorner/MandarinBotNet",
-      "status": "review",
+      "status": "done",
       "attempts": [
         {
           "id": "a76adb00-7394-45a9-b9c1-984aff5cb94c",
@@ -2876,7 +2876,9 @@
       "blockReason": null,
       "pr": 66,
       "headSha": "0bd802ffeea8d6ce4c56e46ec78803cb97314230",
-      "prUrl": "https://github.com/AlexBDevCorner/MandarinBotNet/pull/66"
+      "prUrl": "https://github.com/AlexBDevCorner/MandarinBotNet/pull/66",
+      "completedAt": "2026-10-11T16:22:13Z",
+      "mergeSha": "1cafa34cf7e15b030094b3fc75185cfc74c1542c"
     },
     {
       "taskId": "MSS-076",
@@ -2889,7 +2891,27 @@
           "kind": "implementation",
           "startedAt": "2026-10-11T16:20:16.635Z",
           "sourceControlSha": "c55d2eb17c9d7d6299e83c7550f3fd2dac26e706",
-          "dispatchStatus": "sent"
+          "dispatchStatus": "sent",
+          "runId": 38155127785,
+          "runUrl": "https://github.com/AlexBDevCorner/MtgSoloSports/actions/runs/38155127785",
+          "conclusion": null,
+          "completedAt": null
+        }
+      ],
+      "blockReason": null
+    },
+    {
+      "taskId": "MB-012",
+      "projectId": "mandarinbotnet",
+      "repository": "AlexBDevCorner/MandarinBotNet",
+      "status": "in_progress",
+      "attempts": [
+        {
+          "id": "c81d3331-4d95-47e7-9456-e1e34eb64ae9",
+          "kind": "implementation",
+          "startedAt": "2026-10-11T16:30:17.660Z",
+          "sourceControlSha": "19bc06812f85ded142707d4bad9274af9ecd70b6",
+          "dispatchStatus": "pending"
         }
       ],
       "blockReason": null
