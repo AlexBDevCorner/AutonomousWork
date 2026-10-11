@@ -12,7 +12,7 @@
     "mandarinbotnet": {
       "branch": "main",
       "workflow": "autonomous-worker.yml",
-      "reviewEnabled": false
+      "reviewEnabled": true
     },
     "mtgsolosports": {
       "branch": "main",
