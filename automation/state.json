@@ -3182,7 +3182,7 @@
           "kind": "correction",
           "startedAt": "2026-10-13T09:40:22.417Z",
           "sourceControlSha": "7c3e2b001952ddb7c6c41f69d8210e6cc2117754",
-          "dispatchStatus": "pending",
+          "dispatchStatus": "sent",
           "reviewId": 5501447222,
           "headSha": "04b694affcc6f892773ff94a45ceaa6f3b476a93"
         }
