@@ -2,108 +2,108 @@
 
 Automatic execution: enabled.
 
-| Project | Task | State | PR | Attempts / review fixes / CI repairs | Last result |
+| Project | Task | State | PR | Implementation / review / CI / infra | Last result |
 | --- | --- | --- | --- | --- | --- |
-| mandarinbotnet | MB-001 | done | [#51](https://github.com/AlexBDevCorner/MandarinBotNet/pull/51) | 3 / 0 / 0 | failure |
-| mandarinbotnet | MB-002 | done | [#54](https://github.com/AlexBDevCorner/MandarinBotNet/pull/54) | 1 / 0 / 0 | success |
-| mandarinbotnet | MB-003 | done | [#55](https://github.com/AlexBDevCorner/MandarinBotNet/pull/55) | 1 / 0 / 0 | success |
-| mandarinbotnet | MB-004 | done | [#56](https://github.com/AlexBDevCorner/MandarinBotNet/pull/56) | 1 / 0 / 0 | success |
-| mandarinbotnet | MB-005 | done | [#58](https://github.com/AlexBDevCorner/MandarinBotNet/pull/58) | 1 / 0 / 0 | success |
-| mandarinbotnet | MB-006 | done | [#59](https://github.com/AlexBDevCorner/MandarinBotNet/pull/59) | 1 / 0 / 0 | success |
-| mandarinbotnet | MB-007 | done | [#60](https://github.com/AlexBDevCorner/MandarinBotNet/pull/60) | 1 / 0 / 0 | success |
-| mandarinbotnet | MB-008 | done | [#61](https://github.com/AlexBDevCorner/MandarinBotNet/pull/61) | 1 / 0 / 0 | success |
-| mandarinbotnet | MB-009 | done | [#62](https://github.com/AlexBDevCorner/MandarinBotNet/pull/62) | 1 / 0 / 0 | pending |
-| mandarinbotnet | MB-010 | done | [#63](https://github.com/AlexBDevCorner/MandarinBotNet/pull/63) | 2 / 0 / 0 | success |
-| mandarinbotnet | MB-011 | done | [#66](https://github.com/AlexBDevCorner/MandarinBotNet/pull/66) | 3 / 2 / 0 | success |
-| mandarinbotnet | MB-012 | done | [#67](https://github.com/AlexBDevCorner/MandarinBotNet/pull/67) | 5 / 4 / 0 | success |
-| mtgsolosports | MSS-001 | done | [#3](https://github.com/AlexBDevCorner/MtgSoloSports/pull/3) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-002 | done | [#4](https://github.com/AlexBDevCorner/MtgSoloSports/pull/4) | 2 / 1 / 0 | success |
-| mtgsolosports | MSS-003 | done | [#5](https://github.com/AlexBDevCorner/MtgSoloSports/pull/5) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-004 | done | [#6](https://github.com/AlexBDevCorner/MtgSoloSports/pull/6) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-005 | done | [#7](https://github.com/AlexBDevCorner/MtgSoloSports/pull/7) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-006 | done | [#8](https://github.com/AlexBDevCorner/MtgSoloSports/pull/8) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-007 | done | [#9](https://github.com/AlexBDevCorner/MtgSoloSports/pull/9) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-008 | done | [#10](https://github.com/AlexBDevCorner/MtgSoloSports/pull/10) | 2 / 1 / 0 | success |
-| mtgsolosports | MSS-009 | done | [#11](https://github.com/AlexBDevCorner/MtgSoloSports/pull/11) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-010 | done | [#12](https://github.com/AlexBDevCorner/MtgSoloSports/pull/12) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-011 | done | [#13](https://github.com/AlexBDevCorner/MtgSoloSports/pull/13) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-012 | done | [#14](https://github.com/AlexBDevCorner/MtgSoloSports/pull/14) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-013 | done | [#15](https://github.com/AlexBDevCorner/MtgSoloSports/pull/15) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-014 | done | [#16](https://github.com/AlexBDevCorner/MtgSoloSports/pull/16) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-015 | done | [#17](https://github.com/AlexBDevCorner/MtgSoloSports/pull/17) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-016 | done | [#18](https://github.com/AlexBDevCorner/MtgSoloSports/pull/18) | 2 / 1 / 0 | success |
-| mtgsolosports | MSS-017 | done | [#19](https://github.com/AlexBDevCorner/MtgSoloSports/pull/19) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-018 | done | [#20](https://github.com/AlexBDevCorner/MtgSoloSports/pull/20) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-019 | done | [#21](https://github.com/AlexBDevCorner/MtgSoloSports/pull/21) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-020 | done | [#22](https://github.com/AlexBDevCorner/MtgSoloSports/pull/22) | 2 / 1 / 0 | success |
-| mtgsolosports | MSS-021 | done | [#23](https://github.com/AlexBDevCorner/MtgSoloSports/pull/23) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-022 | done | [#24](https://github.com/AlexBDevCorner/MtgSoloSports/pull/24) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-023 | done | [#25](https://github.com/AlexBDevCorner/MtgSoloSports/pull/25) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-024 | done | [#26](https://github.com/AlexBDevCorner/MtgSoloSports/pull/26) | 2 / 1 / 0 | success |
-| mtgsolosports | MSS-025 | done | [#27](https://github.com/AlexBDevCorner/MtgSoloSports/pull/27) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-026 | done | [#28](https://github.com/AlexBDevCorner/MtgSoloSports/pull/28) | 2 / 1 / 0 | success |
-| mtgsolosports | MSS-027 | done | [#29](https://github.com/AlexBDevCorner/MtgSoloSports/pull/29) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-028 | done | [#30](https://github.com/AlexBDevCorner/MtgSoloSports/pull/30) | 2 / 0 / 1 | success |
-| mtgsolosports | MSS-029 | done | [#31](https://github.com/AlexBDevCorner/MtgSoloSports/pull/31) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-030 | done | [#32](https://github.com/AlexBDevCorner/MtgSoloSports/pull/32) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-031 | done | [#33](https://github.com/AlexBDevCorner/MtgSoloSports/pull/33) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-032 | done | [#34](https://github.com/AlexBDevCorner/MtgSoloSports/pull/34) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-033 | done | [#35](https://github.com/AlexBDevCorner/MtgSoloSports/pull/35) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-034 | done | [#36](https://github.com/AlexBDevCorner/MtgSoloSports/pull/36) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-035 | done | [#37](https://github.com/AlexBDevCorner/MtgSoloSports/pull/37) | 2 / 1 / 0 | success |
-| mtgsolosports | MSS-036 | done | [#38](https://github.com/AlexBDevCorner/MtgSoloSports/pull/38) | 2 / 0 / 0 | success |
-| mtgsolosports | MSS-037 | done | [#39](https://github.com/AlexBDevCorner/MtgSoloSports/pull/39) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-038 | done | [#40](https://github.com/AlexBDevCorner/MtgSoloSports/pull/40) | 2 / 0 / 0 | success |
-| mtgsolosports | MSS-039 | done | [#41](https://github.com/AlexBDevCorner/MtgSoloSports/pull/41) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-040 | done | [#42](https://github.com/AlexBDevCorner/MtgSoloSports/pull/42) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-041 | done | [#43](https://github.com/AlexBDevCorner/MtgSoloSports/pull/43) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-042 | done | [#44](https://github.com/AlexBDevCorner/MtgSoloSports/pull/44) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-043 | done | [#45](https://github.com/AlexBDevCorner/MtgSoloSports/pull/45) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-044 | done | [#46](https://github.com/AlexBDevCorner/MtgSoloSports/pull/46) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-045 | done | [#47](https://github.com/AlexBDevCorner/MtgSoloSports/pull/47) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-047 | done | [#48](https://github.com/AlexBDevCorner/MtgSoloSports/pull/48) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-048 | done | [#49](https://github.com/AlexBDevCorner/MtgSoloSports/pull/49) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-049 | done | [#50](https://github.com/AlexBDevCorner/MtgSoloSports/pull/50) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-050 | done | [#51](https://github.com/AlexBDevCorner/MtgSoloSports/pull/51) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-051 | done | [#52](https://github.com/AlexBDevCorner/MtgSoloSports/pull/52) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-052 | done | [#53](https://github.com/AlexBDevCorner/MtgSoloSports/pull/53) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-046 | done | [#54](https://github.com/AlexBDevCorner/MtgSoloSports/pull/54) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-053 | done | [#55](https://github.com/AlexBDevCorner/MtgSoloSports/pull/55) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-054 | done | [#56](https://github.com/AlexBDevCorner/MtgSoloSports/pull/56) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-055 | done | [#57](https://github.com/AlexBDevCorner/MtgSoloSports/pull/57) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-056 | done | [#58](https://github.com/AlexBDevCorner/MtgSoloSports/pull/58) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-057 | done | [#60](https://github.com/AlexBDevCorner/MtgSoloSports/pull/60) | 2 / 0 / 1 | success |
-| mtgsolosports | MSS-058 | done | [#61](https://github.com/AlexBDevCorner/MtgSoloSports/pull/61) | 2 / 0 / 1 | success |
-| mtgsolosports | MSS-059 | done | [#62](https://github.com/AlexBDevCorner/MtgSoloSports/pull/62) | 5 / 0 / 1 | success |
-| mtgsolosports | MSS-060 | done | [#63](https://github.com/AlexBDevCorner/MtgSoloSports/pull/63) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-061 | done | [#64](https://github.com/AlexBDevCorner/MtgSoloSports/pull/64) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-062 | done | [#65](https://github.com/AlexBDevCorner/MtgSoloSports/pull/65) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-063 | done | [#66](https://github.com/AlexBDevCorner/MtgSoloSports/pull/66) | 2 / 1 / 0 | failure |
-| mtgsolosports | MSS-064 | done | [#68](https://github.com/AlexBDevCorner/MtgSoloSports/pull/68) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-065 | done | [#69](https://github.com/AlexBDevCorner/MtgSoloSports/pull/69) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-066 | done | [#70](https://github.com/AlexBDevCorner/MtgSoloSports/pull/70) | 2 / 1 / 0 | success |
-| mtgsolosports | MSS-067 | done | [#71](https://github.com/AlexBDevCorner/MtgSoloSports/pull/71) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-068 | done | [#72](https://github.com/AlexBDevCorner/MtgSoloSports/pull/72) | 2 / 1 / 0 | success |
-| mtgsolosports | MSS-069 | done | [#73](https://github.com/AlexBDevCorner/MtgSoloSports/pull/73) | 5 / 4 / 0 | success |
-| mtgsolosports | MSS-070 | done | [#74](https://github.com/AlexBDevCorner/MtgSoloSports/pull/74) | 2 / 1 / 0 | success |
-| mtgsolosports | MSS-071 | done | [#75](https://github.com/AlexBDevCorner/MtgSoloSports/pull/75) | 3 / 2 / 0 | success |
-| mtgsolosports | MSS-073 | done | [#76](https://github.com/AlexBDevCorner/MtgSoloSports/pull/76) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-075 | done | [#78](https://github.com/AlexBDevCorner/MtgSoloSports/pull/78) | 3 / 2 / 0 | success |
-| mtgsolosports | MSS-074 | done | [#79](https://github.com/AlexBDevCorner/MtgSoloSports/pull/79) | 3 / 2 / 0 | success |
-| mtgsolosports | MSS-076 | done | [#80](https://github.com/AlexBDevCorner/MtgSoloSports/pull/80) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-072 | done | [#81](https://github.com/AlexBDevCorner/MtgSoloSports/pull/81) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-077 | done | [#82](https://github.com/AlexBDevCorner/MtgSoloSports/pull/82) | 1 / 0 / 0 | success |
-| mtgsolosports | MSS-079 | done | [#83](https://github.com/AlexBDevCorner/MtgSoloSports/pull/83) | 3 / 2 / 0 | success |
-| mtgsolosports | MSS-078 | done | [#84](https://github.com/AlexBDevCorner/MtgSoloSports/pull/84) | 4 / 3 / 0 | success |
-| mtgsolosports | MSS-080 | done | [#85](https://github.com/AlexBDevCorner/MtgSoloSports/pull/85) | 4 / 3 / 0 | success |
-| mtgsolosports | MSS-081 | done | [#86](https://github.com/AlexBDevCorner/MtgSoloSports/pull/86) | 2 / 1 / 0 | success |
-| mtgsolosports | MSS-082 | review | [#87](https://github.com/AlexBDevCorner/MtgSoloSports/pull/87) | 15 / 5 / 9 | success |
-| repomanager | RM-003 | done | [#22](https://github.com/AlexBDevCorner/RepoManager/pull/22) | 4 / 0 / 0 | success |
-| repomanager | RM-004 | done | [#23](https://github.com/AlexBDevCorner/RepoManager/pull/23) | 2 / 0 / 0 | success |
-| repomanager | RM-005 | done | [#25](https://github.com/AlexBDevCorner/RepoManager/pull/25) | 2 / 0 / 0 | success |
-| repomanager | RM-006 | done | [#26](https://github.com/AlexBDevCorner/RepoManager/pull/26) | 1 / 0 / 0 | success |
-| repomanager | RM-007 | done | [#27](https://github.com/AlexBDevCorner/RepoManager/pull/27) | 1 / 0 / 0 | success |
-| repomanager | RM-008 | done | [#28](https://github.com/AlexBDevCorner/RepoManager/pull/28) | 1 / 0 / 0 | success |
-| repomanager | RM-009 | done | [#29](https://github.com/AlexBDevCorner/RepoManager/pull/29) | 2 / 1 / 0 | success |
-| repomanager | RM-010 | done | [#30](https://github.com/AlexBDevCorner/RepoManager/pull/30) | 2 / 1 / 0 | success |
-| repomanager | RM-011 | done | [#31](https://github.com/AlexBDevCorner/RepoManager/pull/31) | 2 / 0 / 1 | success |
+| mandarinbotnet | MB-001 | done | [#51](https://github.com/AlexBDevCorner/MandarinBotNet/pull/51) | 3/10 / 0/15 / 0/15 / 0 | failure |
+| mandarinbotnet | MB-002 | done | [#54](https://github.com/AlexBDevCorner/MandarinBotNet/pull/54) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mandarinbotnet | MB-003 | done | [#55](https://github.com/AlexBDevCorner/MandarinBotNet/pull/55) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mandarinbotnet | MB-004 | done | [#56](https://github.com/AlexBDevCorner/MandarinBotNet/pull/56) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mandarinbotnet | MB-005 | done | [#58](https://github.com/AlexBDevCorner/MandarinBotNet/pull/58) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mandarinbotnet | MB-006 | done | [#59](https://github.com/AlexBDevCorner/MandarinBotNet/pull/59) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mandarinbotnet | MB-007 | done | [#60](https://github.com/AlexBDevCorner/MandarinBotNet/pull/60) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mandarinbotnet | MB-008 | done | [#61](https://github.com/AlexBDevCorner/MandarinBotNet/pull/61) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mandarinbotnet | MB-009 | done | [#62](https://github.com/AlexBDevCorner/MandarinBotNet/pull/62) | 1/10 / 0/15 / 0/15 / 0 | pending |
+| mandarinbotnet | MB-010 | done | [#63](https://github.com/AlexBDevCorner/MandarinBotNet/pull/63) | 2/10 / 0/15 / 0/15 / 0 | success |
+| mandarinbotnet | MB-011 | done | [#66](https://github.com/AlexBDevCorner/MandarinBotNet/pull/66) | 1/10 / 2/15 / 0/15 / 0 | success |
+| mandarinbotnet | MB-012 | done | [#67](https://github.com/AlexBDevCorner/MandarinBotNet/pull/67) | 1/10 / 4/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-001 | done | [#3](https://github.com/AlexBDevCorner/MtgSoloSports/pull/3) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-002 | done | [#4](https://github.com/AlexBDevCorner/MtgSoloSports/pull/4) | 1/10 / 1/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-003 | done | [#5](https://github.com/AlexBDevCorner/MtgSoloSports/pull/5) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-004 | done | [#6](https://github.com/AlexBDevCorner/MtgSoloSports/pull/6) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-005 | done | [#7](https://github.com/AlexBDevCorner/MtgSoloSports/pull/7) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-006 | done | [#8](https://github.com/AlexBDevCorner/MtgSoloSports/pull/8) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-007 | done | [#9](https://github.com/AlexBDevCorner/MtgSoloSports/pull/9) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-008 | done | [#10](https://github.com/AlexBDevCorner/MtgSoloSports/pull/10) | 1/10 / 1/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-009 | done | [#11](https://github.com/AlexBDevCorner/MtgSoloSports/pull/11) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-010 | done | [#12](https://github.com/AlexBDevCorner/MtgSoloSports/pull/12) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-011 | done | [#13](https://github.com/AlexBDevCorner/MtgSoloSports/pull/13) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-012 | done | [#14](https://github.com/AlexBDevCorner/MtgSoloSports/pull/14) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-013 | done | [#15](https://github.com/AlexBDevCorner/MtgSoloSports/pull/15) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-014 | done | [#16](https://github.com/AlexBDevCorner/MtgSoloSports/pull/16) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-015 | done | [#17](https://github.com/AlexBDevCorner/MtgSoloSports/pull/17) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-016 | done | [#18](https://github.com/AlexBDevCorner/MtgSoloSports/pull/18) | 1/10 / 1/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-017 | done | [#19](https://github.com/AlexBDevCorner/MtgSoloSports/pull/19) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-018 | done | [#20](https://github.com/AlexBDevCorner/MtgSoloSports/pull/20) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-019 | done | [#21](https://github.com/AlexBDevCorner/MtgSoloSports/pull/21) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-020 | done | [#22](https://github.com/AlexBDevCorner/MtgSoloSports/pull/22) | 1/10 / 1/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-021 | done | [#23](https://github.com/AlexBDevCorner/MtgSoloSports/pull/23) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-022 | done | [#24](https://github.com/AlexBDevCorner/MtgSoloSports/pull/24) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-023 | done | [#25](https://github.com/AlexBDevCorner/MtgSoloSports/pull/25) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-024 | done | [#26](https://github.com/AlexBDevCorner/MtgSoloSports/pull/26) | 1/10 / 1/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-025 | done | [#27](https://github.com/AlexBDevCorner/MtgSoloSports/pull/27) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-026 | done | [#28](https://github.com/AlexBDevCorner/MtgSoloSports/pull/28) | 1/10 / 1/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-027 | done | [#29](https://github.com/AlexBDevCorner/MtgSoloSports/pull/29) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-028 | done | [#30](https://github.com/AlexBDevCorner/MtgSoloSports/pull/30) | 1/10 / 0/15 / 1/15 / 0 | success |
+| mtgsolosports | MSS-029 | done | [#31](https://github.com/AlexBDevCorner/MtgSoloSports/pull/31) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-030 | done | [#32](https://github.com/AlexBDevCorner/MtgSoloSports/pull/32) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-031 | done | [#33](https://github.com/AlexBDevCorner/MtgSoloSports/pull/33) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-032 | done | [#34](https://github.com/AlexBDevCorner/MtgSoloSports/pull/34) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-033 | done | [#35](https://github.com/AlexBDevCorner/MtgSoloSports/pull/35) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-034 | done | [#36](https://github.com/AlexBDevCorner/MtgSoloSports/pull/36) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-035 | done | [#37](https://github.com/AlexBDevCorner/MtgSoloSports/pull/37) | 1/10 / 1/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-036 | done | [#38](https://github.com/AlexBDevCorner/MtgSoloSports/pull/38) | 2/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-037 | done | [#39](https://github.com/AlexBDevCorner/MtgSoloSports/pull/39) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-038 | done | [#40](https://github.com/AlexBDevCorner/MtgSoloSports/pull/40) | 2/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-039 | done | [#41](https://github.com/AlexBDevCorner/MtgSoloSports/pull/41) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-040 | done | [#42](https://github.com/AlexBDevCorner/MtgSoloSports/pull/42) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-041 | done | [#43](https://github.com/AlexBDevCorner/MtgSoloSports/pull/43) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-042 | done | [#44](https://github.com/AlexBDevCorner/MtgSoloSports/pull/44) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-043 | done | [#45](https://github.com/AlexBDevCorner/MtgSoloSports/pull/45) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-044 | done | [#46](https://github.com/AlexBDevCorner/MtgSoloSports/pull/46) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-045 | done | [#47](https://github.com/AlexBDevCorner/MtgSoloSports/pull/47) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-047 | done | [#48](https://github.com/AlexBDevCorner/MtgSoloSports/pull/48) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-048 | done | [#49](https://github.com/AlexBDevCorner/MtgSoloSports/pull/49) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-049 | done | [#50](https://github.com/AlexBDevCorner/MtgSoloSports/pull/50) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-050 | done | [#51](https://github.com/AlexBDevCorner/MtgSoloSports/pull/51) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-051 | done | [#52](https://github.com/AlexBDevCorner/MtgSoloSports/pull/52) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-052 | done | [#53](https://github.com/AlexBDevCorner/MtgSoloSports/pull/53) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-046 | done | [#54](https://github.com/AlexBDevCorner/MtgSoloSports/pull/54) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-053 | done | [#55](https://github.com/AlexBDevCorner/MtgSoloSports/pull/55) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-054 | done | [#56](https://github.com/AlexBDevCorner/MtgSoloSports/pull/56) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-055 | done | [#57](https://github.com/AlexBDevCorner/MtgSoloSports/pull/57) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-056 | done | [#58](https://github.com/AlexBDevCorner/MtgSoloSports/pull/58) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-057 | done | [#60](https://github.com/AlexBDevCorner/MtgSoloSports/pull/60) | 1/10 / 0/15 / 1/15 / 0 | success |
+| mtgsolosports | MSS-058 | done | [#61](https://github.com/AlexBDevCorner/MtgSoloSports/pull/61) | 1/10 / 0/15 / 1/15 / 0 | success |
+| mtgsolosports | MSS-059 | done | [#62](https://github.com/AlexBDevCorner/MtgSoloSports/pull/62) | 4/10 / 0/15 / 1/15 / 0 | success |
+| mtgsolosports | MSS-060 | done | [#63](https://github.com/AlexBDevCorner/MtgSoloSports/pull/63) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-061 | done | [#64](https://github.com/AlexBDevCorner/MtgSoloSports/pull/64) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-062 | done | [#65](https://github.com/AlexBDevCorner/MtgSoloSports/pull/65) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-063 | done | [#66](https://github.com/AlexBDevCorner/MtgSoloSports/pull/66) | 1/10 / 1/15 / 0/15 / 0 | failure |
+| mtgsolosports | MSS-064 | done | [#68](https://github.com/AlexBDevCorner/MtgSoloSports/pull/68) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-065 | done | [#69](https://github.com/AlexBDevCorner/MtgSoloSports/pull/69) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-066 | done | [#70](https://github.com/AlexBDevCorner/MtgSoloSports/pull/70) | 1/10 / 1/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-067 | done | [#71](https://github.com/AlexBDevCorner/MtgSoloSports/pull/71) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-068 | done | [#72](https://github.com/AlexBDevCorner/MtgSoloSports/pull/72) | 1/10 / 1/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-069 | done | [#73](https://github.com/AlexBDevCorner/MtgSoloSports/pull/73) | 1/10 / 4/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-070 | done | [#74](https://github.com/AlexBDevCorner/MtgSoloSports/pull/74) | 1/10 / 1/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-071 | done | [#75](https://github.com/AlexBDevCorner/MtgSoloSports/pull/75) | 1/10 / 2/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-073 | done | [#76](https://github.com/AlexBDevCorner/MtgSoloSports/pull/76) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-075 | done | [#78](https://github.com/AlexBDevCorner/MtgSoloSports/pull/78) | 1/10 / 2/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-074 | done | [#79](https://github.com/AlexBDevCorner/MtgSoloSports/pull/79) | 1/10 / 2/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-076 | done | [#80](https://github.com/AlexBDevCorner/MtgSoloSports/pull/80) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-072 | done | [#81](https://github.com/AlexBDevCorner/MtgSoloSports/pull/81) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-077 | done | [#82](https://github.com/AlexBDevCorner/MtgSoloSports/pull/82) | 1/10 / 0/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-079 | done | [#83](https://github.com/AlexBDevCorner/MtgSoloSports/pull/83) | 1/10 / 2/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-078 | done | [#84](https://github.com/AlexBDevCorner/MtgSoloSports/pull/84) | 1/10 / 3/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-080 | done | [#85](https://github.com/AlexBDevCorner/MtgSoloSports/pull/85) | 1/10 / 3/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-081 | done | [#86](https://github.com/AlexBDevCorner/MtgSoloSports/pull/86) | 1/10 / 1/15 / 0/15 / 0 | success |
+| mtgsolosports | MSS-082 | in_progress | [#87](https://github.com/AlexBDevCorner/MtgSoloSports/pull/87) | 1/10 / 4/15 / 10/15 / 1 | pending |
+| repomanager | RM-003 | done | [#22](https://github.com/AlexBDevCorner/RepoManager/pull/22) | 4/10 / 0/15 / 0/15 / 0 | success |
+| repomanager | RM-004 | done | [#23](https://github.com/AlexBDevCorner/RepoManager/pull/23) | 2/10 / 0/15 / 0/15 / 0 | success |
+| repomanager | RM-005 | done | [#25](https://github.com/AlexBDevCorner/RepoManager/pull/25) | 2/10 / 0/15 / 0/15 / 0 | success |
+| repomanager | RM-006 | done | [#26](https://github.com/AlexBDevCorner/RepoManager/pull/26) | 1/10 / 0/15 / 0/15 / 0 | success |
+| repomanager | RM-007 | done | [#27](https://github.com/AlexBDevCorner/RepoManager/pull/27) | 1/10 / 0/15 / 0/15 / 0 | success |
+| repomanager | RM-008 | done | [#28](https://github.com/AlexBDevCorner/RepoManager/pull/28) | 1/10 / 0/15 / 0/15 / 0 | success |
+| repomanager | RM-009 | done | [#29](https://github.com/AlexBDevCorner/RepoManager/pull/29) | 1/10 / 1/15 / 0/15 / 0 | success |
+| repomanager | RM-010 | done | [#30](https://github.com/AlexBDevCorner/RepoManager/pull/30) | 1/10 / 1/15 / 0/15 / 0 | success |
+| repomanager | RM-011 | done | [#31](https://github.com/AlexBDevCorner/RepoManager/pull/31) | 1/10 / 0/15 / 1/15 / 0 | success |
