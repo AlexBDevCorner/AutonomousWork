@@ -92,9 +92,13 @@ A failed/uncertain dispatch is never resent automatically because GitHub may hav
 accepted the non-idempotent request before the client lost the response. It waits
 up to 15 minutes for a matching run, then blocks. By contrast, an observed worker
 run that completed as failure/cancelled/timed-out is safe to retry with a new
-claim: the reconciler automatically appends a fresh implementation attempt,
-reuses any same-task branch/PR, and retries up to `maxAttempts`. Partial progress
-is preserved by the target workflow before the failed run ends. A correction normally must advance the PR head past
+claim: the reconciler automatically appends a fresh attempt, reuses the same-task
+branch/PR, and preserves the failed attempt's history. Failed implementations
+retry up to `maxAttempts`; failed review corrections retry up to
+`maxCorrectionRounds` only while the same trusted changes-requested review,
+exact PR head, open non-draft PR, and passing required CI are still present.
+Any head/review change or exhausted budget stops automatic correction recovery.
+Partial progress is preserved by the target workflow before the failed run ends. A correction normally must advance the PR head past
 the reviewed SHA and then returns to review. The one intentional exception is an
 explicit developer disagreement: the worker leaves the reviewed head unchanged
 and posts a machine-readable `autonomous-review-disagreement:v1` PR comment
@@ -110,10 +114,12 @@ limit; a project may begin its next eligible task as soon as the previous one
 is complete. Per-task retry limits and single-active-task guards remain.
 
 For recovery, inspect the recorded run and PR first. Keep historical attempts;
-never delete the ledger to reset counters. A blocked implementation whose latest
+never delete the ledger to reset counters. A blocked implementation or review correction whose latest
 observed worker run ended in `failure`, `cancelled`, or `timed_out` is
-normally retried automatically on the same reconciliation pass (or the next
-heartbeat) while the implementation-attempt budget remains. An explicit operator
+normally retried on the next reconciliation pass, provided its separate
+attempt budget and the relevant task/PR/review guards remain valid.
+A failed correction is never converted into an implementation, and a stale
+or superseded blocking review is never replayed. An explicit operator
 retry remains available when needed:
 
 ```sh
@@ -123,12 +129,14 @@ node tools/autonomy/run.mjs --apply --retry RM-004
 In GitHub Actions, run **Autonomous dispatcher and reconciler** manually and set
 the optional **retry_task** input to the blocked task ID. The retry path fails
 closed unless the task and execution are both blocked, the failure is an observed
-completed worker run, the implementation-attempt limit still
-permits another attempt, the project/global switches are enabled, dependencies
-remain done, no target worker is active, and there is no conflicting autonomous
-PR. A partial open PR for the same task is allowed and is reused by the worker.
+completed worker run, the applicable implementation or correction attempt limit
+still permits another attempt, the project/global switches are enabled,
+dependencies remain done, no target worker is active, and there is no conflicting
+autonomous PR. A partial open PR for an implementation retry is allowed; a
+correction retry requires its original review and exact head to remain current
+and required CI to be green.
 
-A retry appends a new implementation attempt with a new UUID, changes
+A retry appends a new attempt of the same kind with a new UUID, changes
 `blocked -> in_progress`, durably commits that claim before dispatch, and
 preserves every previous attempt. It never re-runs the old GitHub workflow run
 or reuses its claim. Non-worker blocks such as merge conflicts, closed PRs,
