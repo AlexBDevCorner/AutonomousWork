@@ -29,6 +29,26 @@ export const autonomousPr = pr => pr.head.ref.startsWith('autonomous/') || pr.la
 export const runTitle = (taskId, attemptId) => `autonomy ${taskId} ${attemptId}`;
 export const latestAttempt = execution => execution.attempts.at(-1);
 
+// Keep distinct budgets: CI repairs are implementation-mode workers, but are
+// not fresh implementation attempts. Proven infrastructure failures use neither
+// coding budget, and remain in the append-only ledger for diagnostics.
+export function budgetCounts(execution) {
+  const billable = execution.attempts.filter(a => a.failureCategory !== 'infrastructure');
+  return {
+    implementation: billable.filter(a => a.kind === 'implementation' && a.reason !== 'ci_repair').length,
+    correction: billable.filter(a => a.kind === 'correction').length,
+    ciRepair: billable.filter(a => a.reason === 'ci_repair').length,
+    infrastructure: execution.attempts.length - billable.length,
+  };
+}
+
+export function budgetForAttempt(execution, attempt, config) {
+  const counts = budgetCounts(execution);
+  if (attempt.reason === 'ci_repair') return { name: 'CI repairs', used: counts.ciRepair, max: config.maxCorrectionRounds };
+  if (attempt.kind === 'correction') return { name: 'review corrections', used: counts.correction, max: config.maxCorrectionRounds };
+  return { name: 'implementations', used: counts.implementation, max: config.maxAttempts };
+}
+
 export function latestReview(pr, reviews, reviewers) {
   // Only submitted, trusted reviews of the exact current head count. Comments never authorize a fix.
   return reviews.filter(r => reviewers.includes(r.user.login) && r.commit_id === pr.head.sha &&
@@ -92,7 +112,12 @@ export function reconcile(execution, snapshot, config, now) {
         return block('worker_time_limit_exceeded');
       return { ...result, status: 'in_progress', blockReason: null };
     }
-    if (run.conclusion !== 'success') return block(`worker_${run.conclusion ?? 'failed'}`);
+    if (run.conclusion !== 'success') {
+      // Only verified infrastructure signatures are free from coding budgets.
+      // Unknown failures conservatively count as execution failures.
+      attempt.failureCategory = run.failureCategory ?? attempt.failureCategory ?? 'execution';
+      return block(`worker_${run.conclusion ?? 'failed'}`);
+    }
     if (!pr) return block('worker_succeeded_without_pull_request');
     if (attempt.kind === 'correction' && pr.head.sha === attempt.headSha) {
       const disagreement = reviewDisagreement(pr, snapshot.comments?.[pr.number] ?? [], attempt.reviewId, attempt.headSha);
@@ -126,7 +151,7 @@ export function chooseWork(catalog, state, snapshots, config, now) {
       if (!record || byId.get(record.taskId)?.status !== 'review') continue;
       const ci = requiredCiState(snapshot.checks[pr.number] ?? [], config.requiredChecks);
       if (ci.state === 'failed') {
-        if (record.attempts.filter(a => a.reason === 'ci_repair').length >= config.maxCorrectionRounds) continue;
+        if (budgetCounts(record).ciRepair >= config.maxCorrectionRounds) continue;
         candidates.push({ project, task: byId.get(record.taskId), kind: 'implementation', reason: 'ci_repair',
           pr: pr.number, headSha: pr.head.sha });
         continue;
@@ -134,7 +159,7 @@ export function chooseWork(catalog, state, snapshots, config, now) {
       if (ci.state !== 'green') continue;
       const review = latestReview(pr, snapshot.reviews[pr.number] ?? [], config.reviewers);
       if (review?.state !== 'CHANGES_REQUESTED' || record.attempts.some(a => a.reviewId === review.id)) continue;
-      if (record.attempts.filter(a => a.kind === 'correction').length >= config.maxCorrectionRounds) continue;
+      if (budgetCounts(record).correction >= config.maxCorrectionRounds) continue;
       candidates.push({ project, task: byId.get(record.taskId), kind: 'correction', pr: pr.number,
         headSha: pr.head.sha, reviewId: review.id });
       continue;
@@ -175,9 +200,17 @@ export function chooseRetry(taskId, catalog, state, snapshots, config, now) {
   if (!expectedConclusion || !['implementation', 'correction'].includes(attempt?.kind) ||
       attempt.conclusion !== expectedConclusion || !attempt.runId || !attempt.completedAt)
     return null;
-  const kindCount = execution.attempts.filter(a => a.kind === attempt.kind).length;
-  const kindLimit = attempt.kind === 'correction' ? config.maxCorrectionRounds : config.maxAttempts;
-  if (kindCount >= kindLimit) return null;
+  const budget = budgetForAttempt(execution, attempt, config);
+  if (budget.used >= budget.max) return null;
+  if (attempt.failureCategory === 'infrastructure') {
+    // Retry eventually after credential/runner recovery, without a 10-minute
+    // retry storm while a secret is still broken. Back off at most four hours.
+    let consecutive = 0;
+    for (let i = execution.attempts.length - 1;
+      i >= 0 && execution.attempts[i].failureCategory === 'infrastructure'; i--) consecutive++;
+    const delayMinutes = Math.min(15 * 2 ** Math.min(consecutive - 1, 5), 240);
+    if (now < Date.parse(attempt.completedAt) + delayMinutes * 60000) return null;
+  }
 
   const snapshot = snapshots[project.id];
   if (!snapshot || snapshot.runs.some(activeRun)) return null;
@@ -203,6 +236,15 @@ export function chooseRetry(taskId, catalog, state, snapshots, config, now) {
     return { project, task, kind: 'correction', retry: true, pr: taskPr.number,
       headSha: attempt.headSha, reviewId: attempt.reviewId };
   }
+  if (attempt.reason === 'ci_repair') {
+    // Preserve the CI-repair category and its exact failed head on a worker
+    // retry; otherwise a failed repair silently consumes implementation budget.
+    if (!taskPr || taskPr.head.sha !== attempt.headSha ||
+        requiredCiState(snapshot.checks[taskPr.number] ?? [], config.requiredChecks).state !== 'failed')
+      return null;
+    return { project, task, kind: 'implementation', reason: 'ci_repair', retry: true,
+      pr: taskPr.number, headSha: attempt.headSha };
+  }
   return { project, task, kind: 'implementation', retry: true,
     ...(taskPr ? { pr: taskPr.number, headSha: taskPr.head.sha } : {}) };
 }
@@ -221,11 +263,14 @@ export function replaceStatus(text, expected, status) {
 
 export function summary(catalog, state, config) {
   const lines = ['# Autonomous development status', '', `Automatic execution: ${config.enabled ? 'enabled' : 'paused'}.`, '',
-    '| Project | Task | State | PR | Attempts / review fixes / CI repairs | Last result |', '| --- | --- | --- | --- | --- | --- |'];
+    '| Project | Task | State | PR | Implementation / review / CI / infra | Last result |', '| --- | --- | --- | --- | --- | --- |'];
   for (const p of catalog.projects) {
     const records = state.executions.filter(e => e.projectId === p.id);
-    if (!records.length) lines.push(`| ${p.id} | none | ${p.enabled && config.projects[p.id] ? 'idle' : 'not enrolled'} | | 0 / 0 / 0 | |`);
-    for (const e of records) lines.push(`| ${p.id} | ${e.taskId} | ${e.status} | ${e.prUrl ? `[#${e.pr}](${e.prUrl})` : ''} | ${e.attempts.length} / ${e.attempts.filter(a => a.kind === 'correction').length} / ${e.attempts.filter(a => a.reason === 'ci_repair').length} | ${e.blockReason ?? latestAttempt(e).conclusion ?? 'pending'} |`);
+    if (!records.length) lines.push(`| ${p.id} | none | ${p.enabled && config.projects[p.id] ? 'idle' : 'not enrolled'} | | 0 / 0 / 0 / 0 | |`);
+    for (const e of records) {
+      const n = budgetCounts(e);
+      lines.push(`| ${p.id} | ${e.taskId} | ${e.status} | ${e.prUrl ? `[#${e.pr}](${e.prUrl})` : ''} | ${n.implementation}/${config.maxAttempts} / ${n.correction}/${config.maxCorrectionRounds} / ${n.ciRepair}/${config.maxCorrectionRounds} / ${n.infrastructure} | ${e.blockReason ?? latestAttempt(e).conclusion ?? 'pending'} |`);
+    }
   }
   return lines.join('\n') + '\n';
 }

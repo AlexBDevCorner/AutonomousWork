@@ -33,6 +33,37 @@ export class GitHub {
     }
     throw new Error('GitHub pagination limit reached; refusing an incomplete snapshot.');
   }
+  // GitHub job logs are plain text behind a temporary GitHub redirect. Only
+  // use them for the most recent failed worker run; never log their contents.
+  async jobLogs(repository, jobId) {
+    const response = await this.fetcher(`https://api.github.com/repos/${repository}/actions/jobs/${jobId}/logs`, {
+      method: 'GET', redirect: 'follow', signal: AbortSignal.timeout(30000),
+      headers: { Authorization: `Bearer ${this.token}`, Accept: 'text/plain',
+        'User-Agent': 'AutonomousWork' },
+    });
+    if (!response.ok) throw new Error('Unable to read worker job logs.');
+    return response.text();
+  }
+  async classifyWorkerFailure(repository, run) {
+    if (['cancelled', 'timed_out'].includes(run.conclusion)) return 'infrastructure';
+    if (run.conclusion !== 'failure') return 'execution';
+    try {
+      const jobs = await this.pages(`/repos/${repository}/actions/runs/${run.id}/jobs`, 'jobs');
+      for (const job of jobs.filter(j => j.conclusion === 'failure')) {
+        const failed = (job.steps ?? []).filter(s => s.conclusion === 'failure');
+        if (failed.some(s => /^(?:Set up job|Create installation token|Checkout|Check out|Setup (?:Node|\.NET)|Set up (?:Node|\.NET))/i.test(s.name)))
+          return 'infrastructure';
+        if (failed.some(s => /^Run OpenCode worker$/i.test(s.name))) {
+          const logs = await this.jobLogs(repository, job.id);
+          if (/This API key has expired|OpenCode API key (?:is )?expired|Invalid OpenCode API key|OpenCode authentication failed/i.test(logs))
+            return 'infrastructure';
+        }
+      }
+    } catch {
+      // Missing or unavailable logs must never grant a free attempt.
+    }
+    return 'execution';
+  }
   async snapshot(repository, target, executionRecords) {
     const prefix = `/repos/${repository}`;
     const prs = await this.pages(`${prefix}/pulls?state=all`);
@@ -45,6 +76,13 @@ export class GitHub {
         runs.push(await this.request('GET', `${prefix}/actions/runs/${attempt.runId}`));
     }
     const relevantRuns = runs.filter(r => r.path === `.github/workflows/${target.workflow}` || r.path === '.github/workflows/opencode.yml');
+    for (const record of executionRecords) {
+      const attempt = record.attempts.at(-1);
+      if (!attempt || attempt.failureCategory) continue;
+      const run = relevantRuns.find(r => r.display_title === `autonomy ${record.taskId} ${attempt.id}`);
+      if (run?.status === 'completed' && run.conclusion !== 'success')
+        run.failureCategory = await this.classifyWorkerFailure(repository, run);
+    }
     const reviews = {}, checks = {}, comments = {};
     for (let i = 0; i < prs.length; i++) {
       const pr = prs[i];

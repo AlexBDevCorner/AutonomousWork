@@ -481,3 +481,59 @@ test('task spec guard compares blob SHAs so Windows CRLF checkout cannot cause a
   await assert.rejects(() => assertTaskSpecUnchanged(sameShaApi, config, taskPath, ''),
     /Missing pinned control SHA/);
 });
+
+test('CI repair counts separately from the initial implementation budget', async () => {
+  const f = fixture(); f.config.maxAttempts = 1; f.config.maxCorrectionRounds = 3;
+  f.catalog.tasks[0].status = 'review';
+  f.taskTexts[f.catalog.tasks[0].relativePath] = Object.values(f.taskTexts)[0].replace('status: ready', 'status: review');
+  const e = { ...record(), status: 'review', pr: 1 };
+  e.attempts.push({ ...e.attempts[0], id: '00000000-0000-0000-0000-000000000002',
+    reason: 'ci_repair', headSha: sha });
+  f.state.executions = [e]; f.snapshot.prs = [pr()];
+  f.snapshot.checks[1] = [{ id: 20, name: 'build-and-test', status: 'completed', conclusion: 'failure' }];
+  const result = await coordinate({ ...f, apply: true });
+  assert.equal(result.selected.reason, 'ci_repair');
+  assert.equal(result.state.executions[0].attempts.length, 3);
+  assert.equal(result.state.executions[0].attempts.at(-1).reason, 'ci_repair');
+});
+
+test('failed CI repair retry retains pinned head and its separate budget', () => {
+  const f = fixture(); f.config.maxAttempts = 1;
+  f.catalog.tasks[0].status = 'blocked';
+  const repair = { ...record().attempts[0], id: '00000000-0000-0000-0000-000000000002',
+    reason: 'ci_repair', headSha: sha, runId: 8, conclusion: 'failure', completedAt: new Date(now).toISOString() };
+  f.state.executions = [{ ...record(), status: 'blocked', blockReason: 'worker_failure', pr: 1,
+    attempts: [record().attempts[0], repair] }];
+  f.snapshot.prs = [pr()];
+  f.snapshot.checks[1] = [{ id: 20, name: 'build-and-test', status: 'completed', conclusion: 'failure' }];
+  const chosen = chooseRetry('RM-001', f.catalog, f.state, { repomanager: f.snapshot }, f.config, now);
+  assert.equal(chosen.reason, 'ci_repair');
+  assert.equal(chosen.headSha, sha);
+  f.snapshot.prs[0].head.sha = 'b'.repeat(40);
+  assert.equal(chooseRetry('RM-001', f.catalog, f.state, { repomanager: f.snapshot }, f.config, now), null);
+});
+
+test('infrastructure failures do not consume coding budget and use bounded backoff', () => {
+  const f = fixture(); f.config.maxAttempts = 1;
+  f.catalog.tasks[0].status = 'blocked';
+  const attempt = { ...record().attempts[0], runId: 8, conclusion: 'failure',
+    completedAt: new Date(now).toISOString(), failureCategory: 'infrastructure' };
+  const e = { ...record(), status: 'blocked', blockReason: 'worker_failure', attempts: [attempt] };
+  f.state.executions = [e];
+  assert.equal(chooseRetry('RM-001', f.catalog, f.state, { repomanager: f.snapshot }, f.config, now), null);
+  assert.ok(chooseRetry('RM-001', f.catalog, f.state, { repomanager: f.snapshot }, f.config, now + 16 * 60000));
+  e.attempts[0].failureCategory = 'execution';
+  assert.equal(chooseRetry('RM-001', f.catalog, f.state, { repomanager: f.snapshot }, f.config, now + 16 * 60000), null);
+});
+
+test('failed worker authorization is classified only with concrete log evidence', async () => {
+  const fake = new GitHub('token', async url => ({
+    ok: true, status: 200, text: async () => url.endsWith('/jobs')
+      ? JSON.stringify({ jobs: [{ id: 17, conclusion: 'failure', steps: [
+        { name: 'Run OpenCode worker', conclusion: 'failure' }] }] })
+      : 'Error: This API key has expired. Create a new API key in OpenCode Console.',
+  }));
+  assert.equal(await fake.classifyWorkerFailure('Owner/Repo', { id: 8, conclusion: 'failure' }), 'infrastructure');
+  fake.jobLogs = async () => 'Error: dotnet build failed';
+  assert.equal(await fake.classifyWorkerFailure('Owner/Repo', { id: 8, conclusion: 'failure' }), 'execution');
+});

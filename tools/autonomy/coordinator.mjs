@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { chooseWork, chooseRetry, reconcile, latestAttempt, latestReview, ciGreen, requiredCiState, replaceStatus, summary, validateConfig } from './policy.mjs';
+import { chooseWork, chooseRetry, reconcile, latestAttempt, latestReview, ciGreen, requiredCiState, replaceStatus, summary, validateConfig, budgetCounts, budgetForAttempt } from './policy.mjs';
 
 export function validateState(catalog, state, config) {
   validateConfig(config);
@@ -57,10 +57,10 @@ export async function coordinate({ catalog, state: initial, config, sourceSha, t
       const checks = snapshots[e.projectId].checks[pr.number] ?? [];
       const ci = requiredCiState(checks, config.requiredChecks);
       const review = latestReview(pr, snapshots[e.projectId].reviews[pr.number] ?? [], config.reviewers);
-      if (ci.state === 'failed' && next.attempts.filter(a => a.reason === 'ci_repair').length >= config.maxCorrectionRounds)
+      if (ci.state === 'failed' && budgetCounts(next).ciRepair >= config.maxCorrectionRounds)
         next = { ...next, status: 'blocked', blockReason: 'ci_repair_loop_exceeded' };
       else if (ci.state === 'green' && review?.state === 'CHANGES_REQUESTED' &&
-          next.attempts.filter(a => a.kind === 'correction').length >= config.maxCorrectionRounds)
+          budgetCounts(next).correction >= config.maxCorrectionRounds)
         next = { ...next, status: 'blocked', blockReason: 'autonomous_review_loop_exceeded' };
       if (next.status === 'review' && ci.state === 'green' && !review && !pr.draft)
         reviewQueue.push({ repository: e.repository, taskId: e.taskId, pr: pr.number,
@@ -108,8 +108,9 @@ export async function coordinate({ catalog, state: initial, config, sourceSha, t
       dispatchStatus: 'pending', ...(selected.reason ? { reason: selected.reason } : {}),
       ...(selected.reviewId ? { reviewId: selected.reviewId } : {}),
       ...((selected.kind === 'correction' || selected.reason === 'ci_repair') && selected.headSha ? { headSha: selected.headSha } : {}) };
-    if (selected.kind === 'implementation' && execution.attempts.filter(a => a.kind === 'implementation').length >= config.maxAttempts)
-      throw new Error('Task execution attempt limit reached.');
+    const budget = budgetForAttempt(execution, attempt, config);
+    if (budget.used >= budget.max)
+      throw new Error(`Task ${execution.taskId}: ${budget.name} limit reached (${budget.used}/${budget.max}); refusing additional dispatch.`);
     execution.attempts.push(attempt);
     execution.status = 'in_progress';
     execution.blockReason = null;
