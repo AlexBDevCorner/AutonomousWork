@@ -172,10 +172,12 @@ export function chooseRetry(taskId, catalog, state, snapshots, config, now) {
 
   const expectedConclusion = retryableWorkerFailures.get(execution.blockReason);
   const attempt = execution.attempts.at(-1);
-  if (!expectedConclusion || attempt?.kind !== 'implementation' ||
-      attempt.conclusion !== expectedConclusion || !attempt.runId || !attempt.completedAt ||
-      execution.attempts.filter(a => a.kind === 'implementation').length >= config.maxAttempts)
+  if (!expectedConclusion || !['implementation', 'correction'].includes(attempt?.kind) ||
+      attempt.conclusion !== expectedConclusion || !attempt.runId || !attempt.completedAt)
     return null;
+  const kindCount = execution.attempts.filter(a => a.kind === attempt.kind).length;
+  const kindLimit = attempt.kind === 'correction' ? config.maxCorrectionRounds : config.maxAttempts;
+  if (kindCount >= kindLimit) return null;
 
   const snapshot = snapshots[project.id];
   if (!snapshot || snapshot.runs.some(activeRun)) return null;
@@ -189,6 +191,18 @@ export function chooseRetry(taskId, catalog, state, snapshots, config, now) {
   const otherOpen = snapshot.prs.filter(pr => pr.state === 'open' && autonomousPr(pr) && pr !== taskPr);
   if (otherOpen.length) return null;
 
+  if (attempt.kind === 'correction') {
+    // A failed correction may only resume the same trusted review of the same PR head.
+    // Never fall back to a free implementation retry or act on a changed/approved head.
+    if (!taskPr || taskPr.draft || !attempt.reviewId || !attempt.headSha ||
+        taskPr.head.sha !== attempt.headSha ||
+        requiredCiState(snapshot.checks[taskPr.number] ?? [], config.requiredChecks).state !== 'green')
+      return null;
+    const review = latestReview(taskPr, snapshot.reviews[taskPr.number] ?? [], config.reviewers);
+    if (review?.state !== 'CHANGES_REQUESTED' || review.id !== attempt.reviewId) return null;
+    return { project, task, kind: 'correction', retry: true, pr: taskPr.number,
+      headSha: attempt.headSha, reviewId: attempt.reviewId };
+  }
   return { project, task, kind: 'implementation', retry: true,
     ...(taskPr ? { pr: taskPr.number, headSha: taskPr.head.sha } : {}) };
 }
