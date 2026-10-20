@@ -528,7 +528,7 @@ test('infrastructure failures do not consume coding budget and use bounded backo
 
 test('failed worker authorization is classified only with concrete log evidence', async () => {
   const fake = new GitHub('token', async url => ({
-    ok: true, status: 200, text: async () => url.endsWith('/jobs')
+    ok: true, status: 200, text: async () => url.includes('/jobs?')
       ? JSON.stringify({ jobs: [{ id: 17, conclusion: 'failure', steps: [
         { name: 'Run OpenCode worker', conclusion: 'failure' }] }] })
       : 'Error: This API key has expired. Create a new API key in OpenCode Console.',
