@@ -3440,7 +3440,7 @@
           "kind": "correction",
           "startedAt": "2026-10-20T15:40:29.640Z",
           "sourceControlSha": "f250ae87e0c2d6ac9d1e6c65cbfce9d215f7f5ed",
-          "dispatchStatus": "pending",
+          "dispatchStatus": "sent",
           "reviewId": 5587512041,
           "headSha": "6949d3c55e56ebd4d7d8bfe441fc48d6b437de32"
         }
