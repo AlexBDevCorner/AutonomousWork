@@ -3493,7 +3493,7 @@
           "kind": "implementation",
           "startedAt": "2026-10-20T21:50:25.975Z",
           "sourceControlSha": "b95392791197808f51af89d876d48b90f9d02869",
-          "dispatchStatus": "pending",
+          "dispatchStatus": "sent",
           "reason": "ci_repair",
           "headSha": "7f28399db08099485afdea047f92bcce114ae1b4"
         }
