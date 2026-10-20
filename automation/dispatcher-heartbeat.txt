@@ -16,3 +16,4 @@ Retry dispatcher after automatic-retry revalidation fix (2026-10-06).
 Reconcile MSS-063 after recovered-worker merge guard fix (2026-10-07).
 Resume MSS-069 after expanded correction budget (2026-10-09).
 One-time operator recovery trigger for MSS-082 after failed-correction retry fix (2026-10-20).
+One-time operator dispatch after separating CI-repair budgets (MSS-082, 2026-10-20).
