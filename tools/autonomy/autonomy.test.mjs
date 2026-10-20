@@ -40,6 +40,22 @@ function pr(extra = {}) {
 const completed = extra => ({ id: 8, display_title: runTitle('RM-001', id), status: 'completed', conclusion: 'success',
   updated_at: new Date(now).toISOString(), html_url: 'https://github.com/Owner/Repo/actions/runs/8', ...extra });
 const select = f => chooseWork(f.catalog, f.state, { repomanager: f.snapshot }, f.config, now);
+function failedCorrectionFixture() {
+  const f = fixture();
+  f.catalog.tasks[0].status = 'blocked';
+  f.taskTexts[f.catalog.tasks[0].relativePath] = Object.values(f.taskTexts)[0].replace('status: ready', 'status: blocked');
+  f.snapshot.prs = [pr({ draft: false })];
+  f.snapshot.checks[1] = [{ id: 11, name: 'build-and-test', status: 'completed', conclusion: 'success' }];
+  f.snapshot.reviews[1] = [{ id: 12, user: { login: 'review-bot' }, commit_id: sha,
+    state: 'CHANGES_REQUESTED', submitted_at: new Date(now).toISOString() }];
+  const e = { ...record(), status: 'blocked', blockReason: 'worker_failure', pr: 1 };
+  e.attempts.push({ id: '00000000-0000-0000-0000-000000000099', kind: 'correction',
+    startedAt: new Date(now - 30000).toISOString(), sourceControlSha: sha,
+    dispatchStatus: 'sent', runId: 9, conclusion: 'failure', completedAt: new Date(now).toISOString(),
+    reviewId: 12, headSha: sha });
+  f.state.executions = [e];
+  return f;
+}
 
 test('disabled global switch and unenrolled project cannot dispatch', () => {
   const f = fixture(); f.config.enabled = false; assert.equal(select(f), null);
@@ -84,6 +100,53 @@ test('explicit retry allows the same task partial PR but rejects other active au
   f.snapshot.prs.push({ ...pr({ number: 2 }), head: { ref: 'autonomous/OTHER-001', sha, repo: { full_name: 'Owner/Repo' } } });
   assert.equal(chooseRetry('RM-001', f.catalog, f.state, { repomanager: f.snapshot }, f.config, now), null);
 });
+test('failed correction retry preserves the exact trusted review and head', () => {
+  const f = failedCorrectionFixture();
+  const selected = chooseRetry('RM-001', f.catalog, f.state, { repomanager: f.snapshot }, f.config, now);
+  assert.equal(selected.kind, 'correction');
+  assert.equal(selected.retry, true);
+  assert.equal(selected.pr, 1);
+  assert.equal(selected.reviewId, 12);
+  assert.equal(selected.headSha, sha);
+});
+
+test('failed correction retry fails closed when review, head or CI changes', () => {
+  for (const change of [
+    f => { f.snapshot.prs[0].head.sha = 'b'.repeat(40); },
+    f => { f.snapshot.prs[0].draft = true; },
+    f => { f.snapshot.reviews[1] = [{ id: 13, user: { login: 'review-bot' }, commit_id: sha,
+      state: 'APPROVED', submitted_at: new Date(now + 1000).toISOString() }]; },
+    f => { f.snapshot.reviews[1][0].user.login = 'untrusted'; },
+    f => { f.snapshot.checks[1][0].conclusion = 'failure'; },
+    f => { f.snapshot.runs = [{ status: 'in_progress' }]; },
+    f => { f.state.executions[0].blockReason = 'correction_did_not_advance_head'; },
+    f => { f.state.executions[0].attempts[1].completedAt = null; },
+    f => { f.config.maxCorrectionRounds = 1; },
+  ]) {
+    const f = failedCorrectionFixture(); change(f);
+    assert.equal(chooseRetry('RM-001', f.catalog, f.state, { repomanager: f.snapshot }, f.config, now), null);
+  }
+});
+
+test('automatic recovery creates a new correction claim without reusing the failed run', async () => {
+  const f = failedCorrectionFixture();
+  const result = await coordinate({ ...f, apply: true });
+  const e = result.state.executions[0];
+  assert.equal(e.status, 'in_progress');
+  assert.equal(e.blockReason, null);
+  assert.equal(e.attempts.length, 3);
+  assert.equal(e.attempts[1].conclusion, 'failure');
+  assert.equal(e.attempts[2].kind, 'correction');
+  assert.equal(e.attempts[2].reviewId, 12);
+  assert.equal(e.attempts[2].headSha, sha);
+  assert.deepEqual(f.calls.map(c => c[0]), ['commit', 'dispatch', 'commit']);
+  assert.equal(f.calls[1][3].mode, 'correction');
+  assert.equal(f.calls[1][3].review_id, '12');
+  assert.equal(f.calls[1][3].expected_head, sha);
+  assert.notEqual(f.calls[1][3].attempt_id, e.attempts[1].id);
+  assert.match(f.calls[0][4][f.catalog.tasks[0].relativePath], /status: in_progress/);
+});
+
 test('one blocked project does not starve an available project', () => {
   const f = fixture(); f.catalog.projects.push({ ...f.catalog.projects[0], id: 'other', repository: 'Owner/Other' });
   f.catalog.tasks.push({ ...f.catalog.tasks[0], id: 'OT-001', projectId: 'other', priority: 50 });
