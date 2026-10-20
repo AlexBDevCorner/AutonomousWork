@@ -2,7 +2,7 @@ import { appendFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { GitHub } from './github.mjs';
 import { load } from './run.mjs';
-import { autonomousPr, latestAttempt, latestReview, requiredCiState, reviewDisagreement, runTitle } from './policy.mjs';
+import { autonomousPr, latestAttempt, latestReview, requiredCiState, reviewDisagreement, runTitle, budgetCounts } from './policy.mjs';
 
 export function authorize({ catalog, state, config, taskId, taskPath, repository, attemptId, mode, reviewId, expectedHead }) {
   const task = catalog.tasks.find(t => t.id === taskId);
@@ -16,9 +16,9 @@ export function authorize({ catalog, state, config, taskId, taskPath, repository
     if (!config.enabled || task.status !== 'in_progress' || execution?.status !== 'in_progress' ||
         attempt?.id !== attemptId || attempt.kind !== mode ||
         String(attempt.reviewId ?? '') !== String(reviewId ?? '') || (attempt.headSha ?? '') !== (expectedHead ?? '') ||
-        execution.attempts.filter(a => a.kind === 'implementation').length > config.maxAttempts ||
-        execution.attempts.filter(a => a.kind === 'correction').length > config.maxCorrectionRounds ||
-        execution.attempts.filter(a => a.reason === 'ci_repair').length > config.maxCorrectionRounds)
+        budgetCounts(execution).implementation > config.maxAttempts ||
+        budgetCounts(execution).correction > config.maxCorrectionRounds ||
+        budgetCounts(execution).ciRepair > config.maxCorrectionRounds)
       throw new Error('Missing, stale, disabled, or mismatched dispatcher claim.');
     return { task, project, execution, attempt };
   }

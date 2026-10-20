@@ -108,8 +108,16 @@ without that trusted disagreement marker blocks as
 `correction_did_not_advance_head`, so a consumed review ID can never deadlock
 the task. Closing an unmerged PR blocks the task;
 automation does not reopen it. A merge can still reconcile a blocked task to done.
-`maxAttempts` bounds implementation attempts per task, and `maxCorrectionRounds`
-bounds review fixes and CI repairs per task. There is no daily project-start
+`maxAttempts` counts implementation attempts **excluding** CI repairs.
+Review corrections and CI repairs each have their own `maxCorrectionRounds`
+budget. A verified expired OpenCode API key, failed runner setup, cancellation
+or timeout is tracked as an infrastructure failure in the ledger and does not
+consume those coding budgets. Unknown failures count conservatively. Repeated
+infrastructure failures back off for 15, 30, 60, 120, then up to 240 minutes;
+they can resume automatically after the underlying issue is fixed. When a
+coding budget is exhausted, reconciliation blocks that task with a specific
+reason rather than crashing the dispatcher. The operator summary includes the
+task ID and separate used/maximum counts. There is no daily project-start
 limit; a project may begin its next eligible task as soon as the previous one
 is complete. Per-task retry limits and single-active-task guards remain.
 
