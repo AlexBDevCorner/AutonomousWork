@@ -3420,7 +3420,8 @@
           "runId": 39122935870,
           "runUrl": "https://github.com/AlexBDevCorner/MtgSoloSports/actions/runs/39122935870",
           "conclusion": "failure",
-          "completedAt": "2026-10-18T11:22:56Z"
+          "completedAt": "2026-10-18T11:22:56Z",
+          "failureCategory": "infrastructure"
         },
         {
           "id": "6ae2138c-c3bd-4ce6-b074-c603571e6b5f",
