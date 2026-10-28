@@ -3710,7 +3710,7 @@
           "kind": "correction",
           "startedAt": "2026-10-28T14:50:25.278Z",
           "sourceControlSha": "52af6e2043a229a4063af8b921a07d2bef810d72",
-          "dispatchStatus": "pending",
+          "dispatchStatus": "sent",
           "reviewId": 5684523014,
           "headSha": "52431248b4445a0b8f576c16e1c7ab0b794e5363"
         }
