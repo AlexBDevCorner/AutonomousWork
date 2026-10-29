@@ -3967,7 +3967,7 @@
           "kind": "correction",
           "startedAt": "2026-10-29T18:40:16.067Z",
           "sourceControlSha": "c738b32bbf826166d0669d20bc6a654a3e325ee9",
-          "dispatchStatus": "pending",
+          "dispatchStatus": "sent",
           "reviewId": 5703089614,
           "headSha": "8958795c227a714ce934926955a9b68c6163f983"
         }
