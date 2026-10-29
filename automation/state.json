@@ -3902,7 +3902,7 @@
           "kind": "correction",
           "startedAt": "2026-10-29T13:10:22.542Z",
           "sourceControlSha": "512f49a75edbe4a7d3a13d82405086a1c366e28a",
-          "dispatchStatus": "pending",
+          "dispatchStatus": "sent",
           "reviewId": 5698201296,
           "headSha": "345961e868c93b53f0f452fe1cefa955081a822d"
         }
