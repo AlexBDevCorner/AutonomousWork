@@ -4313,7 +4313,7 @@
           "kind": "implementation",
           "startedAt": "2026-10-30T18:00:29.786Z",
           "sourceControlSha": "21cfbf10373e26c101e3039cfdbbabf87be22419",
-          "dispatchStatus": "pending",
+          "dispatchStatus": "sent",
           "reason": "ci_repair",
           "headSha": "d7eb6d03afe862278c43421e78b8595caff4e5e8"
         }
