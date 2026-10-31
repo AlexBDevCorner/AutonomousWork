@@ -14,31 +14,43 @@ export function load(root) {
   return { config, state, catalog };
 }
 
-async function main() {
-  const args = process.argv.slice(2);
-  let retryTaskId = null;
-  const flags = [];
+export function parseArgs(args) {
+  const usage = 'Usage: node tools/autonomy/run.mjs [--apply | --validate] [--retry TASK-ID | --resume-correction TASK-ID --review-id ID --expected-head SHA --resolution-url URL]';
+  const values = {}, flags = new Set();
+  const valueFlags = ['--retry', '--resume-correction', '--review-id', '--expected-head', '--resolution-url'];
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--retry') {
-      if (retryTaskId || !args[i + 1] || !/^[A-Z][A-Z0-9]*-[0-9]+$/.test(args[i + 1]))
-        throw new Error('Usage: node tools/autonomy/run.mjs [--apply | --validate] [--retry TASK-ID]');
-      retryTaskId = args[++i];
-    } else {
-      flags.push(args[i]);
-    }
+    const arg = args[i];
+    if (valueFlags.includes(arg) && !(arg in values) && args[i + 1] && !args[i + 1].startsWith('--'))
+      values[arg] = args[++i];
+    else if (['--apply', '--validate'].includes(arg) && !flags.has(arg)) flags.add(arg);
+    else throw new Error(usage);
   }
-  if (flags.some(a => !['--apply', '--validate'].includes(a)) ||
-      (retryTaskId && (!flags.includes('--apply') || flags.includes('--validate'))))
-    throw new Error('Usage: node tools/autonomy/run.mjs [--apply | --validate] [--retry TASK-ID]');
+  const retryTaskId = values['--retry'] ?? null, resume = values['--resume-correction'];
+  const recoveryFlags = valueFlags.slice(1);
+  const hasRecovery = recoveryFlags.some(k => k in values);
+  if ((flags.has('--apply') && flags.has('--validate')) ||
+      (retryTaskId && (!/^[A-Z][A-Z0-9]*-[0-9]+$/.test(retryTaskId) || !flags.has('--apply') || hasRecovery)) ||
+      (hasRecovery && (flags.has('--validate') || recoveryFlags.some(k => !values[k]) ||
+        !/^[A-Z][A-Z0-9]*-[0-9]+$/.test(resume) || !/^[1-9][0-9]*$/.test(values['--review-id']) ||
+        !Number.isSafeInteger(Number(values['--review-id'])) || !/^[a-f0-9]{40}$/.test(values['--expected-head']) ||
+        !/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/[1-9][0-9]*#issuecomment-[1-9][0-9]*$/.test(values['--resolution-url']))))
+    throw new Error(usage);
+  return { apply: flags.has('--apply'), validate: flags.has('--validate'), retryTaskId,
+    reviewRecovery: hasRecovery ? { taskId: resume, reviewId: Number(values['--review-id']),
+      headSha: values['--expected-head'], resolutionUrl: values['--resolution-url'] } : null };
+}
+
+async function main() {
+  const { apply, validate, retryTaskId, reviewRecovery } = parseArgs(process.argv.slice(2));
   const root = process.cwd(), { config, state, catalog } = load(root);
-  if (flags.includes('--validate')) { console.log('Automation configuration and state valid.'); return; }
-  if (flags.includes('--apply') && execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim())
+  if (validate) { console.log('Automation configuration and state valid.'); return; }
+  if (apply && execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim())
     throw new Error('Apply requires a clean checkout; commit/review planning changes first.');
   const sourceSha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
   const taskTexts = Object.fromEntries(catalog.tasks.map(t => [t.relativePath, readFileSync(resolve(root, t.relativePath), 'utf8')]));
   const api = new GitHub(process.env.GH_TOKEN);
   const result = await coordinate({ config, state, catalog, sourceSha, taskTexts, api,
-    apply: flags.includes('--apply'), retryTaskId });
+    apply, retryTaskId, reviewRecovery });
   writeFileSync('automation/STATUS.md', result.summary);
   writeFileSync('automation/review-queue.json', JSON.stringify(result.reviewQueue, null, 2) + '\n');
   console.log(JSON.stringify({ applied: result.applied, executionEnabled: config.enabled, selected: result.selected,

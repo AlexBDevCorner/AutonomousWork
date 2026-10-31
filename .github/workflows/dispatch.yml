@@ -7,6 +7,26 @@ on:
         required: false
         default: ''
         type: string
+      resume_correction_task:
+        description: "Operator-resolved blocked correction task; requires review/head/resolution pins"
+        required: false
+        default: ''
+        type: string
+      review_id:
+        description: "Exact current CHANGES_REQUESTED review ID for operator recovery"
+        required: false
+        default: ''
+        type: string
+      expected_head:
+        description: "Exact unchanged reviewed PR head SHA for operator recovery"
+        required: false
+        default: ''
+        type: string
+      resolution_url:
+        description: "Trusted human resolution comment URL on the task PR"
+        required: false
+        default: ''
+        type: string
   push:
     branches:
       - master
@@ -57,13 +77,19 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           RETRY_TASK: ${{ inputs.retry_task }}
+          RESUME_CORRECTION_TASK: ${{ inputs.resume_correction_task }}
+          REVIEW_ID: ${{ inputs.review_id }}
+          EXPECTED_HEAD: ${{ inputs.expected_head }}
+          RESOLUTION_URL: ${{ inputs.resolution_url }}
         shell: bash
         run: |
-          if [ -n "$RETRY_TASK" ]; then
-            node tools/autonomy/run.mjs --apply --retry "$RETRY_TASK"
-          else
-            node tools/autonomy/run.mjs --apply
-          fi
+          args=(--apply)
+          if [ -n "$RETRY_TASK" ]; then args+=(--retry "$RETRY_TASK"); fi
+          if [ -n "$RESUME_CORRECTION_TASK" ]; then args+=(--resume-correction "$RESUME_CORRECTION_TASK"); fi
+          if [ -n "$REVIEW_ID" ]; then args+=(--review-id "$REVIEW_ID"); fi
+          if [ -n "$EXPECTED_HEAD" ]; then args+=(--expected-head "$EXPECTED_HEAD"); fi
+          if [ -n "$RESOLUTION_URL" ]; then args+=(--resolution-url "$RESOLUTION_URL"); fi
+          node tools/autonomy/run.mjs "${args[@]}"
       - name: Publish operator summary
         if: always()
         shell: bash

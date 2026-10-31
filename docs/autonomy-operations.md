@@ -108,6 +108,26 @@ without that trusted disagreement marker blocks as
 `correction_did_not_advance_head`, so a consumed review ID can never deadlock
 the task. Closing an unmerged PR blocks the task;
 automation does not reopen it. A merge can still reconcile a blocked task to done.
+
+Disagreement recognition accepts the authenticated PR author, matched by account
+ID and login, or GitHub Actions, matched by bot account ID `41898282`, bot type,
+login, and `performed_via_github_app` ID `15368` / slug `github-actions` from
+GitHub's API. This supports a `github-actions[bot]` comment on an
+`autonomousworkdispatcher[bot]` PR. The canonical marker and review/SHA lines must
+match exactly and occur once. The comment's API and browser URLs must identify
+the task PR in the target repository. Both creation and last edit must fall
+within the claimed correction run. The run must match the attempt ID, configured
+worker workflow, `workflow_dispatch` event, repository and default branch, with
+`run_attempt: 1`. A recorded run ID cannot be replaced by another run.
+
+GitHub API metadata authenticates the account and App. It does not identify the
+individual job that posted a comment. The run/time binding relies on the target
+repository's write-capable workflows being trusted: other workflows with a
+write-capable `GITHUB_TOKEN` share the GitHub Actions bot identity. Protect those
+workflows from untrusted code and inputs. A comment can only stop automation for
+human resolution; it cannot approve a review, authorize a correction or merge.
+See [GitHub's token security boundary](https://docs.github.com/en/actions/concepts/security/github_token).
+
 `maxAttempts` counts implementation attempts **excluding** CI repairs.
 Review corrections and CI repairs each have their own `maxCorrectionRounds`
 budget. A verified expired OpenCode API key, failed runner setup, cancellation
@@ -133,6 +153,64 @@ retry remains available when needed:
 ```sh
 node tools/autonomy/run.mjs --apply --retry RM-004
 ```
+
+### Recovering an operator-resolved review dispute
+
+`--retry` and normal reconciliation leave successful unchanged-head corrections
+blocked. After a human resolves the dispute, use `--resume-correction` with the
+task, current blocking review ID, exact unchanged reviewed head, and resolution
+comment URL. The resolution must be a nonempty comment on that same PR, posted
+after the last correction completed by a human account in `config.reviewers`.
+The dispatcher pins the comment's account ID, body and edit timestamp, and
+rechecks it with the PR, review and CI immediately before claiming. The queued
+worker fetches it again and refuses an edited, deleted or untrusted decision.
+If that worker fails and qualifies for an ordinary bounded retry, the retry
+retains and revalidates the same pinned human decision.
+The verified decision is included as `operatorResolution` in the worker's
+`$RUNNER_TEMP/blocking-review.json` alongside the original blocking review.
+Correction workers must read this evidence and the linked PR comment before
+implementing the bounded resolution. The task specification remains unchanged.
+
+For the MSS-100 incident recorded on 2026-10-31:
+
+1. Deploy this reviewed control change to master. Observe the last worker run
+   `41174909418` as completed successfully and confirm no worker is active.
+   Reconciliation may refine `correction_did_not_advance_head` to
+   `autonomous_review_disagreement` and record the disagreement URL; both remain
+   operator-held blocked states.
+2. Read [the human decision on PR #104](https://github.com/AlexBDevCorner/MtgSoloSports/pull/104#issuecomment-6545999062).
+   It directs a bounded correction: keep the selection/persistence handler and
+   focused tests, defer registration of the mutating Chaos field HTTP route until
+   MSS-106, and verify that the route is unavailable. It does not approve PR #104.
+3. Re-read GitHub. Require PR #104 to remain open and non-draft on
+   `autonomous/MSS-100` from the target repository, targeting `main`, with head
+   `eec31481b377e6e903656a2ee5abcd72c2608eec`, trusted `CHANGES_REQUESTED` review
+   `5721484365`, passing required exact-head CI, and correction budget available.
+   If any pin has changed, stop and assess the new state.
+4. Preview with the command below. It makes GitHub reads and writes local summary
+   files, with no remote changes. Supply `GH_TOKEN` through the existing approved
+   credential mechanism; never print or paste its value.
+
+```powershell
+node tools/autonomy/run.mjs --resume-correction MSS-100 --review-id 5721484365 --expected-head eec31481b377e6e903656a2ee5abcd72c2608eec --resolution-url https://github.com/AlexBDevCorner/MtgSoloSports/pull/104#issuecomment-6545999062
+```
+
+5. After operator approval, run the dispatcher workflow on master with
+   `resume_correction_task=MSS-100`, `review_id=5721484365`,
+   `expected_head=eec31481b377e6e903656a2ee5abcd72c2608eec`, and
+   `resolution_url=https://github.com/AlexBDevCorner/MtgSoloSports/pull/104#issuecomment-6545999062`.
+   Leave `retry_task` empty. Alternatively, use the preview command with `--apply`
+   from a fresh clean checkout of the current control master. Apply requires the
+   global/project enable switches and commits the new claim before dispatch.
+6. Check that the ledger retained every old attempt and appended a new correction
+   UUID with `reason: operator_review_resolution`, the pinned decision, review and
+   head. The new workflow title must contain that UUID. Never rerun the old
+   Actions run, delete attempts, reset counters, edit task requirements or move
+   the task to review by hand. Ambiguous dispatch receipts are observed without
+   resending the same claim.
+7. The correction must advance the head. Its new head must pass normal CI and
+   review; the existing `CHANGES_REQUESTED` review remains effective on the old
+   head. Only an observed merge allows reconciliation to mark the task done.
 
 In GitHub Actions, run **Autonomous dispatcher and reconciler** manually and set
 the optional **retry_task** input to the blocked task ID. The retry path fails

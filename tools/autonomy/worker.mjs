@@ -2,7 +2,7 @@ import { appendFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { GitHub } from './github.mjs';
 import { load } from './run.mjs';
-import { autonomousPr, latestAttempt, latestReview, requiredCiState, reviewDisagreement, runTitle, budgetCounts } from './policy.mjs';
+import { autonomousPr, latestAttempt, latestReview, requiredCiState, reviewDisagreement, reviewResolution, runTitle, budgetCounts } from './policy.mjs';
 
 export function authorize({ catalog, state, config, taskId, taskPath, repository, attemptId, mode, reviewId, expectedHead }) {
   const task = catalog.tasks.find(t => t.id === taskId);
@@ -41,6 +41,14 @@ export async function assertTaskSpecUnchanged(controlApi, config, taskPath, cont
   const live = await controlApi.request('GET', `/repos/${config.controlRepository}/contents/${taskPath}?ref=${config.controlBranch}`);
   if (!pinned?.sha || !live?.sha) throw new Error('Task specification changed after dispatch; refusing the stale claim.');
   if (live.sha !== pinned.sha) throw new Error('Task specification changed after dispatch; refusing the stale claim.');
+}
+
+export async function assertReviewResolutionUnchanged(api, pr, pin, repository, reviewers) {
+  const comment = await api.request('GET', `/repos/${repository}/issues/comments/${pin.id}`);
+  const resolution = reviewResolution(pr, [comment], { repository, reviewers, after: pin.after, url: pin.url });
+  if (JSON.stringify(resolution) !== JSON.stringify(pin))
+    throw new Error('Operator resolution changed or is no longer trusted; refusing the stale correction claim.');
+  return resolution;
 }
 
 async function main() {
@@ -90,7 +98,12 @@ async function main() {
       if (!review || review.state !== 'CHANGES_REQUESTED' || review.id !== Number(input.reviewId)) throw new Error('Stale or untrusted review.');
       // Treat review content as task data in a file, never interpolate it into shell code.
       const comments = await api.pages(`/repos/${input.repository}/pulls/${pr.number}/reviews/${review.id}/comments`);
-      writeFileSync(resolve(process.env.RUNNER_TEMP, 'blocking-review.json'), JSON.stringify({ review, comments }, null, 2));
+      let operatorResolution;
+      if (selected.attempt?.operatorResolution) {
+        operatorResolution = await assertReviewResolutionUnchanged(api, pr, selected.attempt.operatorResolution,
+          input.repository, config.reviewers);
+      }
+      writeFileSync(resolve(process.env.RUNNER_TEMP, 'blocking-review.json'), JSON.stringify({ review, comments, operatorResolution }, null, 2));
     }
     if (input.mode === 'implementation' && input.expectedHead) {
       const pr = own[0];
@@ -118,7 +131,9 @@ async function main() {
     if (!input.expectedHead) throw new Error('Correction verification requires the reviewed head SHA.');
     if (pr.head.sha === input.expectedHead) {
       const comments = await api.pages(`/repos/${input.repository}/issues/${pr.number}/comments`);
-      const disagreement = reviewDisagreement(pr, comments, input.reviewId, input.expectedHead);
+      const run = await api.request('GET', `/repos/${input.repository}/actions/runs/${process.env.GITHUB_RUN_ID}`);
+      const disagreement = reviewDisagreement(pr, comments, input.reviewId, input.expectedHead,
+        { attempt: selected.attempt, run, repository: input.repository, taskId: input.taskId, target });
       if (!disagreement)
         throw new Error('Correction did not advance the PR head and did not record an explicit review disagreement (correction_did_not_advance_head).');
       console.log(`Developer disagreed with blocking review ${input.reviewId}; leaving the reviewed head unchanged for human resolution.`);
