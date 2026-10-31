@@ -4429,7 +4429,7 @@
           "kind": "implementation",
           "startedAt": "2026-10-31T00:30:20.137Z",
           "sourceControlSha": "d1d355161aa8d404ad0a402a398153cf4f59a37c",
-          "dispatchStatus": "pending"
+          "dispatchStatus": "sent"
         }
       ],
       "blockReason": null
