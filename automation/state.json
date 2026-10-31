@@ -4517,7 +4517,7 @@
           "kind": "correction",
           "startedAt": "2026-10-31T17:40:04.151Z",
           "sourceControlSha": "ae4f8c6f1a55be5fdeefc09e643a1758e715d1e5",
-          "dispatchStatus": "pending",
+          "dispatchStatus": "sent",
           "reason": "operator_review_resolution",
           "operatorResolution": {
             "id": 6545999062,
