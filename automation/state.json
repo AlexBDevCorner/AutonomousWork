@@ -4491,7 +4491,7 @@
           "kind": "correction",
           "startedAt": "2026-10-31T05:00:30.040Z",
           "sourceControlSha": "f5dc854faf90c269a87a22a77b9047ca5d741e05",
-          "dispatchStatus": "pending",
+          "dispatchStatus": "sent",
           "reviewId": 5721355757,
           "headSha": "ec52feca353d55a66b7beee9ea09b3c183affae4"
         }
