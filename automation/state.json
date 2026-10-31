@@ -4473,7 +4473,7 @@
       "taskId": "MSS-100",
       "projectId": "mtgsolosports",
       "repository": "AlexBDevCorner/MtgSoloSports",
-      "status": "blocked",
+      "status": "in_progress",
       "attempts": [
         {
           "id": "8b575443-8b2f-4acc-8170-3f56b1548876",
@@ -4511,12 +4511,31 @@
           "runUrl": "https://github.com/AlexBDevCorner/MtgSoloSports/actions/runs/41174909418",
           "conclusion": "success",
           "completedAt": "2026-10-31T06:18:45Z"
+        },
+        {
+          "id": "16cacc5c-2d4e-4309-b94e-a6b817d4f9c8",
+          "kind": "correction",
+          "startedAt": "2026-10-31T17:40:04.151Z",
+          "sourceControlSha": "ae4f8c6f1a55be5fdeefc09e643a1758e715d1e5",
+          "dispatchStatus": "pending",
+          "reason": "operator_review_resolution",
+          "operatorResolution": {
+            "id": 6545999062,
+            "url": "https://github.com/AlexBDevCorner/MtgSoloSports/pull/104#issuecomment-6545999062",
+            "authorId": 23151818,
+            "body": "## Technical dispute resolution — MSS-100 / reviewer P1\n\n**Decision: the underlying P1 is valid, but requiring full `CurrentSeason`/`Phase` lifecycle enforcement inside MSS-100 is not the right fix.** This is an operator architecture decision, **not** a replacement GitHub review, approval, or authorization to bypass CI/review guards.\n\nThe current `POST /api/saves/{saveId}/cups/chaos/field` route is registered in `Program.cs`. For a source season whose completed record still exists, it can create a previously absent Chaos edition and advance the save-wide RNG even if promotion, later cup events, or a later season have already started. The write is transactional, but the mutation is not innocuous: it can change subsequent results and create a retroactive tournament. `EnsureComplete(source)` only protects against incomplete *source standings*, not invalid *execution timing*. Existing Color/Type selection handlers accepting historical sources is not a sufficient safety argument.\n\nHowever, MSS-106 explicitly owns the forward-only activation version, proper postseason integration, `CurrentSeason`/`Phase` gating, and ensuring new versus pre-existing saves behave correctly. Implementing full lifecycle rules in MSS-100 would duplicate that work, and the synthetic Season 2 fixture's metadata is not necessarily a real lifecycle state.\n\n**Bounded correction required for MSS-100**:\n1. Keep the Chaos selection/persistence handler and direct-call focused tests; do **not expose its state-mutating HTTP POST route in `Program.cs` yet**. A minimal solution is deferring `SelectChaosCupFieldEndpoint.Map(app)` until MSS-106. If the handler is needed by later task code, it remains available through DI.\n2. MSS-106 MUST enable the HTTP route only with save-specific forward activation and legal season/phase validation for new creations (and preserve read-only/history/retry behavior).\n3. Add or adjust a regression test / registration assertion verifying that the mutating route is unavailable until lifecycle integration. Avoid broad refactors or unrelated changes.\n4. Advance the branch head by a real correction commit; run required exact-head CI and submit through the normal review queue. Do not treat this comment as approval or override the currently trusted CHANGES_REQUESTED review.\n\nThe current automation is separately blocked by an identity mismatch in disagreement-comment detection (PR author `autonomousworkdispatcher[bot]`, valid worker comment author `github-actions[bot]`); tracked at https://github.com/AlexBDevCorner/AutonomousWork/issues/33. That recovery must use a legitimate newly claimed correction and preserve the ledger/history. No manual state shortcut or unguarded merge.",
+            "updatedAt": "2026-10-31T16:21:19Z",
+            "after": "2026-10-31T06:18:45Z"
+          },
+          "reviewId": 5721484365,
+          "headSha": "eec31481b377e6e903656a2ee5abcd72c2608eec"
         }
       ],
-      "blockReason": "correction_did_not_advance_head",
+      "blockReason": null,
       "pr": 104,
       "headSha": "eec31481b377e6e903656a2ee5abcd72c2608eec",
-      "prUrl": "https://github.com/AlexBDevCorner/MtgSoloSports/pull/104"
+      "prUrl": "https://github.com/AlexBDevCorner/MtgSoloSports/pull/104",
+      "disagreementUrl": "https://github.com/AlexBDevCorner/MtgSoloSports/pull/104#issuecomment-6539998994"
     }
   ]
 }
