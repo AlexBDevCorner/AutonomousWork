@@ -56,13 +56,58 @@ export function latestReview(pr, reviews, reviewers) {
     .sort((a, b) => Date.parse(a.submitted_at) - Date.parse(b.submitted_at) || a.id - b.id).at(-1);
 }
 
-export function reviewDisagreement(pr, comments, reviewId, reviewedHead) {
+function claimedCorrectionRun(attempt, run, { repository, taskId, target }) {
+  return attempt.kind === 'correction' && Number.isSafeInteger(run?.id) && run.id > 0 &&
+    (!attempt.runId || attempt.runId === run.id) && run.run_attempt === 1 &&
+    run.display_title === runTitle(taskId, attempt.id) && run.event === 'workflow_dispatch' &&
+    run.path === `.github/workflows/${target.workflow}` && run.head_branch === target.branch &&
+    run.repository?.full_name === repository && run.head_repository?.full_name === repository &&
+    Date.parse(run.run_started_at) >= Date.parse(attempt.startedAt);
+}
+
+function commentOnPr(comment, pr, repository) {
+  return Number.isSafeInteger(comment.id) && comment.id > 0 &&
+    comment.issue_url === `https://api.github.com/repos/${repository}/issues/${pr.number}` &&
+    comment.html_url === `https://github.com/${repository}/pull/${pr.number}#issuecomment-${comment.id}`;
+}
+
+export function reviewDisagreement(pr, comments, reviewId, reviewedHead, context) {
+  const { attempt, run, repository, now = Date.now() } = context;
+  if (!/^[1-9][0-9]*$/.test(String(reviewId)) || !/^[a-f0-9]{40}$/.test(reviewedHead) ||
+      String(attempt.reviewId) !== String(reviewId) || attempt.headSha !== reviewedHead ||
+      pr.head.sha !== reviewedHead || pr.head.ref !== `autonomous/${context.taskId}` ||
+      pr.head.repo?.full_name !== repository || !claimedCorrectionRun(attempt, run, context)) return;
+  const start = Date.parse(run.run_started_at);
+  const end = run.status === 'completed' ? Date.parse(run.updated_at) : now;
+  if (!Number.isFinite(end) || end < start || end > now) return;
   const marker = '<!-- autonomous-review-disagreement:v1 -->';
   const reviewLine = `Review-ID: ${reviewId}`;
   const headLine = `Reviewed-SHA: ${reviewedHead}`;
-  return comments.filter(c => c.user?.login === pr.user?.login && typeof c.body === 'string' &&
-    c.body.includes(marker) && c.body.includes(reviewLine) && c.body.includes(headLine))
+  return comments.filter(c => {
+    // API-owned IDs and App provenance, never a display name or comment text,
+    // identify the job token. Other write-capable workflows share this identity.
+    const actions = c.user?.login === 'github-actions[bot]' && c.user.id === 41898282 && c.user.type === 'Bot' &&
+      c.performed_via_github_app?.id === 15368 && c.performed_via_github_app.slug === 'github-actions';
+    const author = Number.isSafeInteger(pr.user?.id) && c.user?.id === pr.user.id && c.user.login === pr.user.login;
+    if ((!actions && !author) || !commentOnPr(c, pr, repository) || typeof c.body !== 'string') return false;
+    const created = Date.parse(c.created_at), updated = Date.parse(c.updated_at);
+    if (!(created >= start && created <= end && updated >= created && updated <= end)) return false;
+    const lines = c.body.split(/\r?\n/);
+    return lines[0] === marker && lines[1] === reviewLine && lines[2] === headLine &&
+      lines.filter(l => l.startsWith('Review-ID:')).length === 1 &&
+      lines.filter(l => l.startsWith('Reviewed-SHA:')).length === 1 &&
+      lines.filter(l => l === marker).length === 1;
+  })
     .sort((a, b) => Date.parse(a.created_at ?? 0) - Date.parse(b.created_at ?? 0) || a.id - b.id).at(-1);
+}
+
+export function reviewResolution(pr, comments, { repository, reviewers, after, url, now = Date.now() }) {
+  const comment = comments.find(c => c.html_url === url && commentOnPr(c, pr, repository) &&
+    c.user?.type === 'User' && Number.isSafeInteger(c.user.id) && reviewers.includes(c.user.login) &&
+    typeof c.body === 'string' && c.body.trim() && Date.parse(c.created_at) > Date.parse(after) &&
+    Date.parse(c.updated_at) >= Date.parse(c.created_at) && Date.parse(c.updated_at) <= now);
+  return comment ? { id: comment.id, url, authorId: comment.user.id, body: comment.body,
+    updatedAt: comment.updated_at, after } : null;
 }
 
 export function requiredCiState(checks, requiredChecks) {
@@ -102,6 +147,7 @@ export function reconcile(execution, snapshot, config, now) {
   if (runs.length > 1) return block('duplicate_workflow_runs');
   const run = runs[0];
   if (run) {
+    if (attempt.runId && attempt.runId !== run.id) return block('worker_run_mismatch');
     attempt.runId = run.id;
     attempt.runUrl = run.html_url;
     attempt.conclusion = run.conclusion;
@@ -120,7 +166,9 @@ export function reconcile(execution, snapshot, config, now) {
     }
     if (!pr) return block('worker_succeeded_without_pull_request');
     if (attempt.kind === 'correction' && pr.head.sha === attempt.headSha) {
-      const disagreement = reviewDisagreement(pr, snapshot.comments?.[pr.number] ?? [], attempt.reviewId, attempt.headSha);
+      const disagreement = reviewDisagreement(pr, snapshot.comments?.[pr.number] ?? [], attempt.reviewId, attempt.headSha,
+        { attempt, run, repository: execution.repository, taskId: execution.taskId,
+          target: config.projects[execution.projectId], now });
       if (disagreement) return { ...result, status: 'blocked', blockReason: 'autonomous_review_disagreement',
         disagreementUrl: disagreement.html_url ?? null };
       return block('correction_did_not_advance_head');
@@ -184,7 +232,7 @@ const retryableWorkerFailures = new Map([
   ['worker_timed_out', 'timed_out'],
 ]);
 
-export function chooseRetry(taskId, catalog, state, snapshots, config, now) {
+export function chooseRetry(taskId, catalog, state, snapshots, config, now, reviewRecovery = null) {
   if (!config.enabled) return null;
   const task = catalog.tasks.find(t => t.id === taskId);
   const project = catalog.projects.find(p => p.id === task?.projectId);
@@ -195,8 +243,11 @@ export function chooseRetry(taskId, catalog, state, snapshots, config, now) {
       !task.dependsOn.every(id => catalog.tasks.find(t => t.id === id)?.status === 'done'))
     return null;
 
-  const expectedConclusion = retryableWorkerFailures.get(execution.blockReason);
   const attempt = execution.attempts.at(-1);
+  const resolvingReview = reviewRecovery?.taskId === taskId && attempt?.kind === 'correction' &&
+    ['autonomous_review_disagreement', 'correction_did_not_advance_head'].includes(execution.blockReason);
+  if (reviewRecovery && !resolvingReview) return null;
+  const expectedConclusion = resolvingReview ? 'success' : retryableWorkerFailures.get(execution.blockReason);
   if (!expectedConclusion || !['implementation', 'correction'].includes(attempt?.kind) ||
       attempt.conclusion !== expectedConclusion || !attempt.runId || !attempt.completedAt)
     return null;
@@ -233,6 +284,31 @@ export function chooseRetry(taskId, catalog, state, snapshots, config, now) {
       return null;
     const review = latestReview(taskPr, snapshot.reviews[taskPr.number] ?? [], config.reviewers);
     if (review?.state !== 'CHANGES_REQUESTED' || review.id !== attempt.reviewId) return null;
+    if (resolvingReview) {
+      if (execution.pr !== taskPr.number || reviewRecovery.reviewId !== attempt.reviewId ||
+          reviewRecovery.headSha !== attempt.headSha) return null;
+      const runs = snapshot.runs.filter(r => r.display_title === runTitle(taskId, attempt.id));
+      const run = runs[0];
+      if (runs.length !== 1 || !claimedCorrectionRun(attempt, run, { repository: project.repository, taskId,
+        target: config.projects[project.id] }) || run.status !== 'completed' || run.conclusion !== 'success' ||
+        run.updated_at !== attempt.completedAt) return null;
+      const resolution = reviewResolution(taskPr, snapshot.comments?.[taskPr.number] ?? [], {
+        repository: project.repository, reviewers: config.reviewers, after: attempt.completedAt,
+        url: reviewRecovery.resolutionUrl, now });
+      if (!resolution) return null;
+      return { project, task, kind: 'correction', reason: 'operator_review_resolution', retry: true,
+        pr: taskPr.number, headSha: attempt.headSha, reviewId: attempt.reviewId, operatorResolution: resolution };
+    }
+    // Failed recovery workers retain the human's bounded scope on every retry.
+    if (attempt.reason === 'operator_review_resolution') {
+      const pin = attempt.operatorResolution;
+      if (!pin) return null;
+      const resolution = reviewResolution(taskPr, snapshot.comments?.[taskPr.number] ?? [], {
+        repository: project.repository, reviewers: config.reviewers, after: pin.after, url: pin.url, now });
+      if (JSON.stringify(resolution) !== JSON.stringify(pin)) return null;
+      return { project, task, kind: 'correction', reason: attempt.reason, retry: true,
+        pr: taskPr.number, headSha: attempt.headSha, reviewId: attempt.reviewId, operatorResolution: resolution };
+    }
     return { project, task, kind: 'correction', retry: true, pr: taskPr.number,
       headSha: attempt.headSha, reviewId: attempt.reviewId };
   }

@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { chooseWork, chooseRetry, reconcile, replaceStatus, runTitle, latestReview, ciGreen, requiredCiState, validateConfig } from './policy.mjs';
+import { chooseWork, chooseRetry, reconcile, replaceStatus, runTitle, latestReview, ciGreen, requiredCiState, validateConfig, reviewDisagreement, reviewResolution } from './policy.mjs';
 import { coordinate, validateState } from './coordinator.mjs';
-import { authorize, assertTaskSpecUnchanged } from './worker.mjs';
+import { authorize, assertTaskSpecUnchanged, assertReviewResolutionUnchanged } from './worker.mjs';
 import { GitHub } from './github.mjs';
+import { parseArgs } from './run.mjs';
 
 const now = Date.parse('2026-09-12T12:00:00Z');
 const id = '00000000-0000-0000-0000-000000000001';
@@ -54,6 +55,35 @@ function failedCorrectionFixture() {
     dispatchStatus: 'sent', runId: 9, conclusion: 'failure', completedAt: new Date(now).toISOString(),
     reviewId: 12, headSha: sha });
   f.state.executions = [e];
+  return f;
+}
+
+function disagreementFixture() {
+  const f = failedCorrectionFixture(), e = f.state.executions[0], attempt = e.attempts.at(-1);
+  e.blockReason = 'correction_did_not_advance_head';
+  attempt.conclusion = 'success';
+  attempt.completedAt = new Date(now - 10000).toISOString();
+  attempt.runUrl = 'https://github.com/Owner/Repo/actions/runs/9';
+  attempt.startedAt = new Date(now - 60000).toISOString();
+  f.newId = () => '00000000-0000-0000-0000-000000000002';
+  f.snapshot.prs[0].user = { login: 'autonomousworkdispatcher[bot]', id: 777, type: 'Bot' };
+  f.snapshot.runs = [completed({ id: 9, display_title: runTitle('RM-001', attempt.id), run_attempt: 1,
+    event: 'workflow_dispatch', path: '.github/workflows/autonomous-worker.yml', head_branch: 'master',
+    repository: { full_name: 'Owner/Repo' }, head_repository: { full_name: 'Owner/Repo' },
+    run_started_at: new Date(now - 55000).toISOString(), updated_at: attempt.completedAt,
+    html_url: attempt.runUrl })];
+  f.snapshot.comments[1] = [{ id: 99, user: { login: 'github-actions[bot]', id: 41898282, type: 'Bot' },
+    performed_via_github_app: { id: 15368, slug: 'github-actions' },
+    body: '<!-- autonomous-review-disagreement:v1 -->\nReview-ID: 12\nReviewed-SHA: ' + sha + '\nReason: Requires human resolution.',
+    created_at: new Date(now - 20000).toISOString(), updated_at: new Date(now - 20000).toISOString(),
+    issue_url: 'https://api.github.com/repos/Owner/Repo/issues/1',
+    html_url: 'https://github.com/Owner/Repo/pull/1#issuecomment-99' }];
+  f.reviewRecovery = { taskId: 'RM-001', reviewId: 12, headSha: sha,
+    resolutionUrl: 'https://github.com/Owner/Repo/pull/1#issuecomment-100' };
+  f.snapshot.comments[1].push({ id: 100, user: { login: 'review-bot', id: 123, type: 'User' },
+    body: 'Keep the handler and tests. Defer the mutating route until lifecycle integration. Normal CI and review still apply.',
+    created_at: new Date(now - 1000).toISOString(), updated_at: new Date(now - 1000).toISOString(),
+    issue_url: 'https://api.github.com/repos/Owner/Repo/issues/1', html_url: f.reviewRecovery.resolutionUrl });
   return f;
 }
 
@@ -216,25 +246,279 @@ test('correction that leaves the PR head unchanged blocks instead of deadlocking
   g.snapshot.runs = [correctionRun()];
   assert.equal(reconcile(correctionRecord(), g.snapshot, f.config, now).status, 'review');
 });
-test('explicit developer disagreement stops the correction loop for human resolution', () => {
-  const correctionId = '00000000-0000-0000-0000-000000000002';
-  const e = record();
-  e.attempts.push({ id: correctionId, kind: 'correction', startedAt: new Date(now - 60000).toISOString(),
-    sourceControlSha: sha, dispatchStatus: 'sent', reviewId: 12, headSha: sha });
-  const f = fixture();
-  f.snapshot.prs = [pr()];
-  f.snapshot.runs = [completed({ display_title: runTitle('RM-001', correctionId) })];
-  f.snapshot.comments[1] = [{
-    id: 99,
-    user: { login: 'worker-bot' },
-    body: '<!-- autonomous-review-disagreement:v1 -->\nReview-ID: 12\nReviewed-SHA: ' + sha + '\nReason: The requested change contradicts the task.',
-    created_at: new Date(now).toISOString(),
-    html_url: 'https://github.com/Owner/Repo/pull/1#issuecomment-99',
-  }];
-  const blocked = reconcile(e, f.snapshot, f.config, now);
+test('GitHub Actions disagreement on a dispatcher App PR stops for human resolution', () => {
+  const f = disagreementFixture();
+  const blocked = reconcile(f.state.executions[0], f.snapshot, f.config, now);
   assert.equal(blocked.status, 'blocked');
   assert.equal(blocked.blockReason, 'autonomous_review_disagreement');
   assert.equal(blocked.disagreementUrl, 'https://github.com/Owner/Repo/pull/1#issuecomment-99');
+});
+
+test('PR-author disagreement remains supported with authenticated identity and run binding', () => {
+  const f = disagreementFixture();
+  f.snapshot.comments[1][0].user = { ...f.snapshot.prs[0].user };
+  delete f.snapshot.comments[1][0].performed_via_github_app;
+  assert.equal(reconcile(f.state.executions[0], f.snapshot, f.config, now).blockReason, 'autonomous_review_disagreement');
+});
+
+const invalidDisagreements = {
+  'arbitrary user': (c) => { c.user = { login: 'attacker', id: 42, type: 'User' }; },
+  'forged bot login': (c) => { c.user.id = 42; },
+  'wrong bot type': (c) => { c.user.type = 'User'; },
+  'missing App provenance': (c) => { delete c.performed_via_github_app; },
+  'wrong App': (c) => { c.performed_via_github_app.id = 42; },
+  'wrong App slug': (c) => { c.performed_via_github_app.slug = 'other'; },
+  'forged PR author login': (c) => { c.user.login = 'autonomousworkdispatcher[bot]'; },
+  'wrong review': (c) => { c.body = c.body.replace('Review-ID: 12', 'Review-ID: 13'); },
+  'review ID prefix collision': (c) => { c.body = c.body.replace('Review-ID: 12', 'Review-ID: 120'); },
+  'wrong SHA': (c) => { c.body = c.body.replace(sha, 'b'.repeat(40)); },
+  'SHA suffix': (c) => { c.body = c.body.replace(sha, sha + '0'); },
+  'quoted marker': (c) => { c.body = 'Quoted comment:\n' + c.body; },
+  'duplicate review field': (c) => { c.body += '\nReview-ID: 13'; },
+  'duplicate SHA field': (c) => { c.body += '\nReviewed-SHA: ' + sha; },
+  'duplicate marker': (c) => { c.body += '\n<!-- autonomous-review-disagreement:v1 -->'; },
+  'wrong PR': (c) => { c.issue_url = 'https://api.github.com/repos/Owner/Repo/issues/2'; },
+  'wrong repository': (c) => { c.issue_url = 'https://api.github.com/repos/Other/Repo/issues/1'; },
+  'wrong comment URL': (c) => { c.html_url = c.html_url.replace('/pull/1', '/pull/2'); },
+  'previous attempt comment': (c) => { c.created_at = c.updated_at = new Date(now - 65000).toISOString(); },
+  'after run completion': (c) => { c.created_at = c.updated_at = new Date(now - 5000).toISOString(); },
+  'edited after run completion': (c) => { c.updated_at = new Date(now).toISOString(); },
+  'missing timestamp': (c) => { delete c.created_at; },
+  'missing edit timestamp': (c) => { delete c.updated_at; },
+  'non-string body': (c) => { c.body = null; },
+};
+for (const [name, change] of Object.entries(invalidDisagreements)) {
+  test(`unchanged-head correction rejects disagreement with ${name}`, () => {
+    const f = disagreementFixture(); change(f.snapshot.comments[1][0]);
+    assert.equal(reconcile(f.state.executions[0], f.snapshot, f.config, now).blockReason, 'correction_did_not_advance_head');
+  });
+}
+
+test('disagreement requires the exact claimed workflow, repository, branch, run and attempt window', () => {
+  for (const change of [
+    r => { r.path = '.github/workflows/opencode.yml'; },
+    r => { r.event = 'pull_request'; },
+    r => { r.head_branch = 'other'; },
+    r => { r.repository.full_name = 'Other/Repo'; },
+    r => { r.head_repository.full_name = 'Other/Repo'; },
+    r => { r.run_attempt = 2; },
+    r => { r.id = 10; },
+    r => { r.display_title = 'unrelated'; },
+    r => { r.run_started_at = new Date(now - 65000).toISOString(); },
+  ]) {
+    const f = disagreementFixture(), run = f.snapshot.runs[0]; change(run);
+    assert.equal(reviewDisagreement(f.snapshot.prs[0], f.snapshot.comments[1], 12, sha, {
+      attempt: f.state.executions[0].attempts.at(-1), run, repository: 'Owner/Repo', taskId: 'RM-001',
+      target: f.config.projects.repomanager, now }), undefined);
+  }
+});
+
+test('worker verifier accepts the same disagreement while its run is still active', () => {
+  const f = disagreementFixture(), run = f.snapshot.runs[0];
+  run.status = 'in_progress'; run.conclusion = null;
+  assert.equal(reviewDisagreement(f.snapshot.prs[0], f.snapshot.comments[1], '12', sha, {
+    attempt: f.state.executions[0].attempts.at(-1), run, repository: 'Owner/Repo', taskId: 'RM-001',
+    target: f.config.projects.repomanager, now }).id, 99);
+});
+
+test('a different run cannot replace the recorded correction run ID', () => {
+  const f = disagreementFixture(); f.snapshot.runs[0].id = 10;
+  const blocked = reconcile(f.state.executions[0], f.snapshot, f.config, now);
+  assert.equal(blocked.blockReason, 'worker_run_mismatch');
+  assert.equal(blocked.attempts.at(-1).runId, 9);
+});
+
+test('already-blocked incident is reclassified without automatic recovery or dispatch', async () => {
+  const f = disagreementFixture();
+  const result = await coordinate({ ...f, reviewRecovery: null, apply: true });
+  assert.equal(result.state.executions[0].status, 'blocked');
+  assert.equal(result.state.executions[0].blockReason, 'autonomous_review_disagreement');
+  assert.equal(result.state.executions[0].disagreementUrl, f.snapshot.comments[1][0].html_url);
+  assert.equal(result.selected, null);
+  assert.deepEqual(f.calls.map(c => c[0]), ['commit']);
+});
+
+test('operator recovery appends a fresh bounded correction, pins the decision, and preserves history', async () => {
+  const f = disagreementFixture(), history = structuredClone(f.state.executions[0].attempts);
+  const result = await coordinate({ ...f, apply: true });
+  const e = result.state.executions[0], next = e.attempts.at(-1);
+  assert.deepEqual(e.attempts.slice(0, -1), history);
+  assert.equal(e.status, 'in_progress');
+  assert.equal(e.blockReason, null);
+  assert.equal(next.id, f.newId());
+  assert.equal(next.reason, 'operator_review_resolution');
+  assert.equal(next.kind, 'correction');
+  assert.equal(next.reviewId, 12);
+  assert.equal(next.headSha, sha);
+  assert.equal(next.operatorResolution.body, f.snapshot.comments[1][1].body);
+  assert.equal(next.operatorResolution.url, f.reviewRecovery.resolutionUrl);
+  assert.equal(next.runId, undefined);
+  assert.deepEqual(f.calls.map(c => c[0]), ['commit', 'dispatch', 'commit']);
+  const claim = JSON.parse(f.calls[0][4]['automation/state.json']).executions[0];
+  assert.deepEqual(claim.attempts.slice(0, -1), history);
+  assert.equal(claim.attempts.at(-1).dispatchStatus, 'pending');
+  assert.equal(f.calls[1][3].control_commit, 'b'.repeat(40));
+  assert.equal(f.calls[1][3].attempt_id, next.id);
+  assert.equal(f.calls[1][3].mode, 'correction');
+  assert.equal(f.calls[1][3].review_id, '12');
+  assert.equal(f.calls[1][3].expected_head, sha);
+  assert.match(f.calls[0][4][f.catalog.tasks[0].relativePath], /status: in_progress/);
+  assert.equal(result.reviewQueue.length, 0);
+  assert.equal(f.snapshot.reviews[1][0].state, 'CHANGES_REQUESTED');
+});
+
+test('a blocked unchanged correction can recover even when no trusted disagreement was recorded', async () => {
+  const f = disagreementFixture(); f.snapshot.comments[1].shift();
+  const result = await coordinate(f);
+  assert.equal(result.selected.reason, 'operator_review_resolution');
+  assert.deepEqual(f.calls, []);
+});
+
+test('automatic retry of a failed operator recovery preserves and revalidates the human decision', async () => {
+  const initial = disagreementFixture();
+  const claim = await coordinate({ ...initial, apply: true });
+  const failureState = structuredClone(claim.state), attempt = failureState.executions[0].attempts.at(-1);
+  failureState.executions[0].status = 'blocked';
+  failureState.executions[0].blockReason = 'worker_failure';
+  attempt.runId = 10; attempt.conclusion = 'failure'; attempt.completedAt = new Date(now).toISOString();
+  const f = disagreementFixture();
+  f.state = failureState;
+  f.reviewRecovery = null;
+  f.newId = () => '00000000-0000-0000-0000-000000000003';
+  const history = structuredClone(f.state.executions[0].attempts);
+  const retried = await coordinate({ ...f, apply: true });
+  const next = retried.state.executions[0].attempts.at(-1);
+  assert.deepEqual(retried.state.executions[0].attempts.slice(0, -1), history);
+  assert.equal(next.reason, 'operator_review_resolution');
+  assert.deepEqual(next.operatorResolution, attempt.operatorResolution);
+  assert.equal(next.reviewId, 12);
+  assert.equal(next.headSha, sha);
+  assert.equal(next.runId, undefined);
+  for (const change of [
+    g => { g.snapshot.comments[1][1].body = 'Changed scope'; },
+    g => { g.snapshot.comments[1].pop(); },
+    g => { g.snapshot.comments[1][1].user.login = 'untrusted'; },
+    g => { delete g.state.executions[0].attempts.at(-1).operatorResolution; },
+  ]) {
+    const g = disagreementFixture(); g.state = structuredClone(failureState); change(g);
+    assert.equal(chooseRetry('RM-001', g.catalog, g.state, { repomanager: g.snapshot }, g.config, now), null);
+  }
+});
+
+test('operator recovery refuses unsafe or stale evidence and never falls back to unrelated work', async () => {
+  const changes = {
+    'global pause': f => { f.config.enabled = false; },
+    'project pause': f => { f.catalog.projects[0].enabled = false; },
+    'wrong task': f => { f.reviewRecovery.taskId = 'RM-999'; },
+    'wrong head pin': f => { f.reviewRecovery.headSha = 'b'.repeat(40); },
+    'wrong review pin': f => { f.reviewRecovery.reviewId = 13; },
+    'unrelated block': f => { f.state.executions[0].blockReason = 'merge_conflict'; },
+    'missing resolution': f => { f.snapshot.comments[1].pop(); },
+    'untrusted human': f => { f.snapshot.comments[1][1].user.login = 'attacker'; },
+    'bot resolution': f => { f.snapshot.comments[1][1].user.type = 'Bot'; },
+    'wrong resolution PR': f => { f.snapshot.comments[1][1].issue_url += '0'; },
+    'old decision': f => { f.snapshot.comments[1][1].created_at = new Date(now - 11000).toISOString(); },
+    'future edit': f => { f.snapshot.comments[1][1].updated_at = new Date(now + 1000).toISOString(); },
+    'empty decision': f => { f.snapshot.comments[1][1].body = ' '; },
+    'unobserved worker': f => { f.snapshot.runs = []; },
+    'duplicate worker': f => { f.snapshot.runs.push({ ...f.snapshot.runs[0], id: 10 }); },
+    'rerun': f => { f.snapshot.runs[0].run_attempt = 2; },
+    'wrong workflow': f => { f.snapshot.runs[0].path = '.github/workflows/opencode.yml'; },
+    'failed worker': f => { f.snapshot.runs[0].conclusion = 'failure'; },
+    'active worker': f => { f.snapshot.runs[0].status = 'in_progress'; },
+    'changed head': f => { f.snapshot.prs[0].head.sha = 'b'.repeat(40); },
+    'draft PR': f => { f.snapshot.prs[0].draft = true; },
+    'closed PR': f => { f.snapshot.prs[0].state = 'closed'; },
+    'fork PR': f => { f.snapshot.prs[0].head.repo.full_name = 'Other/Repo'; },
+    'wrong base': f => { f.snapshot.prs[0].base.ref = 'other'; },
+    'merge conflict': f => { f.snapshot.prs[0].mergeable = false; },
+    'failed CI': f => { f.snapshot.checks[1][0].conclusion = 'failure'; },
+    'pending CI': f => { f.snapshot.checks[1][0].status = 'in_progress'; },
+    'missing CI': f => { f.snapshot.checks[1] = []; },
+    'approved review': f => { f.snapshot.reviews[1][0].state = 'APPROVED'; },
+    'untrusted review': f => { f.snapshot.reviews[1][0].user.login = 'attacker'; },
+    'superseded review': f => { f.snapshot.reviews[1][0].id = 13; },
+    'correction budget': f => { f.config.maxCorrectionRounds = 1; },
+    'another active PR': f => { f.snapshot.prs.push(pr({ number: 2 })); },
+  };
+  for (const [name, change] of Object.entries(changes)) {
+    const f = disagreementFixture(); change(f);
+    await assert.rejects(() => coordinate({ ...f, apply: true }), /not eligible/, name);
+    assert.deepEqual(f.calls, [], name);
+  }
+});
+
+test('operator recovery rechecks the decision, review and CI immediately before claiming', async () => {
+  for (const change of [
+    f => { f.snapshot.comments[1][1].body = 'Different decision'; },
+    f => { f.snapshot.reviews[1][0].state = 'APPROVED'; },
+    f => { f.snapshot.prs[0].head.sha = 'b'.repeat(40); },
+    f => { f.snapshot.checks[1][0].conclusion = 'failure'; },
+  ]) {
+    const f = disagreementFixture(); let reads = 0;
+    f.api.snapshot = async () => { if (++reads === 2) change(f); return structuredClone(f.snapshot); };
+    await assert.rejects(() => coordinate({ ...f, apply: true }), /Target changed/);
+    assert.deepEqual(f.calls, []);
+  }
+});
+
+test('recovery never reuses an old run after an ambiguous dispatch or a control-branch race', async () => {
+  const f = disagreementFixture();
+  f.api.dispatch = async () => { f.calls.push(['dispatch']); throw new Error('Ambiguous timeout'); };
+  const result = await coordinate({ ...f, apply: true });
+  assert.equal(result.state.executions[0].attempts.at(-1).dispatchStatus, 'unknown');
+  f.catalog.tasks[0].status = 'in_progress';
+  f.taskTexts[f.catalog.tasks[0].relativePath] = f.taskTexts[f.catalog.tasks[0].relativePath].replace('status: blocked', 'status: in_progress');
+  f.calls.length = 0;
+  const polled = await coordinate({ ...f, state: result.state, reviewRecovery: null, apply: true });
+  assert.equal(polled.state.executions[0].status, 'in_progress');
+  assert.equal(polled.state.executions[0].attempts.at(-1).runId, undefined);
+  assert.equal(f.calls.some(c => c[0] === 'dispatch'), false);
+  const g = disagreementFixture();
+  g.api.commitFiles = async () => { throw new Error('Control branch advanced'); };
+  await assert.rejects(() => coordinate({ ...g, apply: true }), /Control branch advanced/);
+  assert.deepEqual(g.calls, []);
+});
+
+test('queued worker refetches the pinned resolution and refuses changed, deleted or untrusted evidence', async () => {
+  const f = disagreementFixture(), pr = f.snapshot.prs[0];
+  const options = { repository: 'Owner/Repo', reviewers: f.config.reviewers,
+    after: f.state.executions[0].attempts.at(-1).completedAt, url: f.reviewRecovery.resolutionUrl, now };
+  const pin = reviewResolution(pr, f.snapshot.comments[1], options);
+  assert.ok(pin);
+  const comment = f.snapshot.comments[1][1];
+  const api = { request: async (method, path) => {
+    assert.equal(method, 'GET');
+    assert.equal(path, '/repos/Owner/Repo/issues/comments/100');
+    return structuredClone(comment);
+  } };
+  assert.deepEqual(await assertReviewResolutionUnchanged(api, pr, pin, 'Owner/Repo', f.config.reviewers), pin);
+  for (const change of [
+    c => { c.body = 'Edited decision'; }, c => { c.user.login = 'untrusted'; },
+    c => { c.user.id = 456; }, c => { c.user.type = 'Bot'; },
+    c => { c.updated_at = new Date(now).toISOString(); }, c => { c.issue_url += '0'; },
+  ]) {
+    const edited = structuredClone(comment); change(edited);
+    await assert.rejects(() => assertReviewResolutionUnchanged({ request: async () => edited }, pr, pin,
+      'Owner/Repo', f.config.reviewers), /Operator resolution changed/);
+  }
+  await assert.rejects(() => assertReviewResolutionUnchanged({ request: async () => { throw new Error('HTTP 404'); } },
+    pr, pin, 'Owner/Repo', f.config.reviewers), /HTTP 404/);
+});
+
+test('recovery CLI requires complete pins, permits preview, and rejects conflicting or malformed options', () => {
+  const valid = ['--resume-correction', 'MSS-100', '--review-id', '5721484365', '--expected-head', sha,
+    '--resolution-url', 'https://github.com/Owner/Repo/pull/104#issuecomment-6545999062'];
+  const parsed = parseArgs(valid);
+  assert.equal(parsed.apply, false);
+  assert.equal(parsed.reviewRecovery.reviewId, 5721484365);
+  assert.equal(parseArgs(['--apply', ...valid]).apply, true);
+  for (const args of [valid.slice(0, -2), ['--validate', ...valid], ['--apply', '--retry', 'MSS-100', ...valid],
+    [...valid, '--review-id', '12'], ['--apply', '--validate'], ['--expected-head', sha],
+    ['--resume-correction', 'MSS-100'], [...valid.slice(0, 3), '12bad', ...valid.slice(4)],
+    [...valid.slice(0, 3), '9007199254740992', ...valid.slice(4)],
+    [...valid.slice(0, -1), 'https://evil.example/comment'], [...valid, '--unknown']])
+    assert.throws(() => parseArgs(args), /Usage/);
 });
 
 test('missing run waits for propagation then blocks without an automatic resend', () => {

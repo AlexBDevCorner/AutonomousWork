@@ -29,7 +29,8 @@ export function validateState(catalog, state, config) {
 
 // All side effects are injected. This makes dispatch ordering, races, and ambiguous failures testable.
 export async function coordinate({ catalog, state: initial, config, sourceSha, taskTexts, api, apply = false,
-  retryTaskId = null, now = Date.now(), newId = randomUUID }) {
+  retryTaskId = null, reviewRecovery = null, now = Date.now(), newId = randomUUID }) {
+  if (retryTaskId && reviewRecovery) throw new Error('Choose retry or operator review resolution, not both.');
   validateState(catalog, initial, config);
   const state = structuredClone(initial), model = structuredClone(catalog), texts = { ...taskTexts };
   let parent = sourceSha;
@@ -51,7 +52,12 @@ export async function coordinate({ catalog, state: initial, config, sourceSha, t
     if (e.status === 'done') continue;
     let next = reconcile(e, snapshots[e.projectId], config, now);
     // A blocked execution requires operator resolution; new observations may only complete a manual merge.
-    if (e.status === 'blocked' && next.status !== 'done') next = { ...next, status: 'blocked', blockReason: e.blockReason };
+    if (e.status === 'blocked' && next.status !== 'done') {
+      // Refine the incident's diagnostic without releasing the operator hold.
+      const reason = e.blockReason === 'correction_did_not_advance_head' && next.blockReason === 'autonomous_review_disagreement'
+        ? next.blockReason : e.blockReason;
+      next = { ...next, status: 'blocked', blockReason: reason };
+    }
     const pr = snapshots[e.projectId].prs.find(p => p.number === next.pr);
     if (pr && next.status === 'review') {
       const checks = snapshots[e.projectId].checks[pr.number] ?? [];
@@ -70,15 +76,18 @@ export async function coordinate({ catalog, state: initial, config, sourceSha, t
     state.executions[i] = next;
     status(next, next.status);
   }
-  const automaticRetry = retryTaskId ? null : state.executions
-    .map(e => chooseRetry(e.taskId, model, state, snapshots, config, now))
-    .filter(Boolean)
-    .sort((a, b) => b.task.priority - a.task.priority || a.task.id.localeCompare(b.task.id, 'en'))[0] ?? null;
-  const selected = retryTaskId
-    ? chooseRetry(retryTaskId, model, state, snapshots, config, now)
-    : automaticRetry ?? chooseWork(model, state, snapshots, config, now);
-  if (retryTaskId && !selected)
-    throw new Error(`Blocked task ${retryTaskId} is not eligible for a bounded implementation retry.`);
+  const select = () => {
+    if (reviewRecovery) return chooseRetry(reviewRecovery.taskId, model, state, snapshots, config, now, reviewRecovery);
+    if (retryTaskId) return chooseRetry(retryTaskId, model, state, snapshots, config, now);
+    const automaticRetry = state.executions
+      .map(e => chooseRetry(e.taskId, model, state, snapshots, config, now))
+      .filter(Boolean)
+      .sort((a, b) => b.task.priority - a.task.priority || a.task.id.localeCompare(b.task.id, 'en'))[0];
+    return automaticRetry ?? chooseWork(model, state, snapshots, config, now);
+  };
+  const selected = select();
+  if ((retryTaskId || reviewRecovery) && !selected)
+    throw new Error(`Blocked task ${retryTaskId ?? reviewRecovery.taskId} is not eligible for the requested bounded recovery.`);
   async function save(message) {
     const files = { ...changes, 'automation/state.json': JSON.stringify(state, null, 2) + '\n',
       'automation/STATUS.md': summary(model, state, config) };
@@ -88,15 +97,10 @@ export async function coordinate({ catalog, state: initial, config, sourceSha, t
   if (selected && apply) {
     // Re-observe the target immediately before claiming. Worker repeats the guard after queueing.
     snapshots[selected.project.id] = await api.snapshot(selected.project.repository, config.projects[selected.project.id], state.executions.filter(e => e.projectId === selected.project.id));
-    const freshAutomaticRetry = retryTaskId ? null : state.executions
-      .map(e => chooseRetry(e.taskId, model, state, snapshots, config, now))
-      .filter(Boolean)
-      .sort((a, b) => b.task.priority - a.task.priority || a.task.id.localeCompare(b.task.id, 'en'))[0] ?? null;
-    const fresh = retryTaskId
-      ? chooseRetry(retryTaskId, model, state, snapshots, config, now)
-      : freshAutomaticRetry ?? chooseWork(model, state, snapshots, config, now);
+    const fresh = select();
     if (!fresh || fresh.task.id !== selected.task.id || fresh.headSha !== selected.headSha ||
-        fresh.reviewId !== selected.reviewId || fresh.reason !== selected.reason)
+        fresh.reviewId !== selected.reviewId || fresh.reason !== selected.reason ||
+        JSON.stringify(fresh.operatorResolution) !== JSON.stringify(selected.operatorResolution))
       throw new Error('Target changed during dispatch planning; no claim or dispatch made.');
     let execution = state.executions.find(e => e.taskId === selected.task.id);
     if (!execution) {
@@ -106,6 +110,7 @@ export async function coordinate({ catalog, state: initial, config, sourceSha, t
     }
     const attempt = { id: newId(), kind: selected.kind, startedAt: new Date(now).toISOString(), sourceControlSha: sourceSha,
       dispatchStatus: 'pending', ...(selected.reason ? { reason: selected.reason } : {}),
+      ...(selected.operatorResolution ? { operatorResolution: selected.operatorResolution } : {}),
       ...(selected.reviewId ? { reviewId: selected.reviewId } : {}),
       ...((selected.kind === 'correction' || selected.reason === 'ci_repair') && selected.headSha ? { headSha: selected.headSha } : {}) };
     const budget = budgetForAttempt(execution, attempt, config);
