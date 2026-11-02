@@ -6,8 +6,8 @@ const SHA = /^[a-f0-9]{40}$/;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const VERDICTS = new Set(['APPROVE', 'REQUEST_CHANGES', 'WITHHOLD', 'MERGE_CHECK']);
 const TERMINAL = new Set(['applied', 'dry_run', 'stale', 'withheld', 'failed']);
-// Legacy ChatGPT queue rows remain processable; the OpenCode reviewer evaluates in-memory rows.
-export const SOURCES = new Set(['chatgpt-scheduled', 'opencode-actions']);
+// The OpenCode reviewer evaluates in-memory rows; nothing else may feed the guards.
+export const SOURCES = new Set(['opencode-actions']);
 export const OBSERVATION_MAX_AGE_MS = 3 * 60 * 60 * 1000;
 export const PROTOCOL_BLOB_SHA = '936f0652c923063c68399e40206357164b469da3';
 const result = (status, reason, evidence = {}) => ({ status, reason, evidence });

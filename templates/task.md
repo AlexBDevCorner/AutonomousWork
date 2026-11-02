@@ -51,7 +51,7 @@ the heading. -->
 
 ## Acceptance criteria
 
-<!-- Checkboxes a reviewer (ChatGPT/Human) can verify without guesswork.
+<!-- Checkboxes a reviewer (OpenCode/Human) can verify without guesswork.
 Example:
 - [ ] `autonomous-work validate` fails on duplicate IDs with file names listed.
 - [ ] ... -->

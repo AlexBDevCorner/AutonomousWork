@@ -42,7 +42,7 @@
    a Human promotes `draft` to `ready`; there is no separate per-task allowlist.
    Project enrollment in `automation/config.json` and project/global enable
    switches remain independent safety boundaries.
-7. The native GitHub schedule is temporarily disabled because schedule events are not being created reliably. A ChatGPT hourly heartbeat updates `automation/dispatcher-heartbeat.txt`; a path-scoped push trigger then runs the dispatcher/reconciler in apply mode. Keep `automation/config.json.enabled` true
+7. The native GitHub schedule is not used because its events are not created reliably; the owner's external scheduler starts it by `workflow_dispatch` every 10 minutes in apply mode. Keep `automation/config.json.enabled` true
    only while autonomous execution is intended. The blocked-review/correction
    path still needs a dedicated bounded live fixture; never invent a finding
    against good code merely to exercise it.
@@ -243,7 +243,7 @@ The RepoManager worker uses `opencode-go/muse-spark-1.3-contributor` with
 `83abc64a5c4e0e0a5157f2c4435d34131009a404`; update that pin deliberately
 after reviewing upstream changes rather than following `@latest`.
 
-Scheduled dispatcher/reconciliation currently uses an hourly ChatGPT heartbeat plus a path-scoped GitHub push trigger; the native GitHub `schedule` trigger is temporarily disabled. Each dispatcher
+Scheduled dispatcher/reconciliation: the owner's external scheduler starts it by `workflow_dispatch` every 10 minutes (the native GitHub `schedule` trigger is unreliable and unused). Each dispatcher
 run also dispatches the event-driven OpenCode reviewer for eligible autonomous PR
 heads, and a model-free merge check for trusted approved heads (see
 [autonomous review](autonomous-review.md)).
@@ -253,8 +253,9 @@ the only component that marks a task `done` after observing the merge.
 ## Reviewer and merger
 
 The ChatGPT scheduled reviewers are retired. The OpenCode reviewer only proposes
-a verdict; the master-only review bridge re-reads `reviewer/CHATGPT_REVIEW.md` as
-the authoritative protocol, submits APPROVE or REQUEST_CHANGES, and merges only an
+a verdict; model-free jobs of the master-only reviewer workflow re-read
+`reviewer/CHATGPT_REVIEW.md` as the authoritative protocol, submit APPROVE or
+REQUEST_CHANGES, and merge only an
 already trusted-approved exact head after re-validating all current mapping, CI,
 review, mergeability, and SHA guards.
 

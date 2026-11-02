@@ -4,7 +4,6 @@ import {
   isUuid, validateRecord, validatePlanning, validateGitHub,
   requiredCheckState, latestTrustedReview, parseControlPin, PROTOCOL_BLOB_SHA,
 } from './guards.mjs';
-import { QueueApi, runDryProcess, assertRuntimeEnvironment } from './processor.mjs';
 
 const NOW = Date.parse('2026-09-25T18:00:00Z');
 const ID = '450e0ce5-276f-41ac-9b25-453d1b982dad';
@@ -12,7 +11,7 @@ const TOKEN = 'b50e0ce5-276f-41ac-9b25-453d1b982dad';
 const HEAD = 'a'.repeat(40);
 const REPO = 'AlexBDevCorner/MtgSoloSports';
 const row = () => ({
-  id: ID, schema_version: 1, source: 'chatgpt-scheduled', repository: REPO,
+  id: ID, schema_version: 1, source: 'opencode-actions', repository: REPO,
   project_id: 'mtgsolosports', task_id: 'MSS-002', pr_number: 4,
   reviewed_sha: HEAD, verdict: 'APPROVE', findings: [], ci: {},
   review_summary: 'Synthetic test fixture', observed_at: '2026-09-25T17:30:00Z',
@@ -215,73 +214,6 @@ test('PR-body pin is optional, but an existing mismatched pin is stale', () => {
   assert.equal(validateGitHub(observed({ pr: p, pinMatches: false })).reason,
     'control_specification_pin_mismatch');
 });
-test('duplicate delivery and in-progress claim do not run validation', async () => {
-  let claimCalls = 0;
-  const queue = { get: async () => ({ status: 'dry_run' }), claim: async () => { claimCalls++; return null; } };
-  const noop = await runDryProcess({ queue, github: {}, id: ID, clock: () => NOW });
-  assert.equal(noop.outcome, 'duplicate_terminal'); assert.equal(claimCalls, 0);
-  queue.get = async () => ({ status: 'processing', lease_until: '2026-09-25T18:10:00Z' });
-  const busy = await runDryProcess({ queue, github: {}, id: ID, clock: () => NOW });
-  assert.equal(busy.outcome, 'already_processing'); assert.equal(claimCalls, 0);
-  queue.get = async () => ({ status: 'queued' });
-  const noClaim = await runDryProcess({ queue, github: {}, id: ID, clock: () => NOW });
-  assert.equal(noClaim.outcome, 'not_claimed'); assert.equal(claimCalls, 1);
-});
-test('successful lease claim is finished once, with no GitHub mutation', async () => {
-  const done = [];
-  const queue = { get: async () => ({ status: 'queued' }), claim: async () => row(),
-    finish: async (...args) => done.push(args) };
-  const answer = await runDryProcess({ queue, github: {}, id: ID, clock: () => NOW,
-    verify: async () => ({ status: 'dry_run', reason: 'review_guards_passed_no_mutation', evidence: { head: HEAD } }) });
-  assert.equal(answer.outcome, 'evaluated');
-  assert.equal(done.length, 1);
-  assert.deepEqual(done[0][2], { status: 'dry_run', reason: 'review_guards_passed_no_mutation', evidence: { head: HEAD } });
-});
-test('failed or expired leases cannot record a successful validation', async () => {
-  const queue = { get: async () => ({ status: 'queued' }), claim: async () => ({ ...row(), claim_token: '' }),
-    finish: async () => { throw new Error('should not be called'); } };
-  await assert.rejects(runDryProcess({ queue, github: {}, id: ID, clock: () => NOW }), /Invalid or expired/);
-  queue.claim = async () => row();
-  queue.finish = async () => { throw new Error('Lease lost'); };
-  await assert.rejects(runDryProcess({ queue, github: {}, id: ID, clock: () => NOW,
-    verify: async () => ({ status: 'dry_run', reason: 'validated', evidence: {} }) }), /Lease lost/);
-});
-test('transient failures become retryable and missing credentials fail before claim', async () => {
-  const finished = [];
-  const queue = { get: async () => ({ status: 'queued' }), claim: async () => row(),
-    finish: async (...args) => finished.push(args) };
-  await assert.rejects(runDryProcess({ queue, github: {}, id: ID, clock: () => NOW,
-    verify: async () => { throw new Error('GitHub timed out'); } }), /GitHub timed out/);
-  assert.equal(finished[0][2].status, 'retryable');
-  assert.throws(() => new QueueApi(''), /missing or too short/);
-  await assert.rejects(runDryProcess({ queue: null, github: {}, id: ID }), /Missing queue/);
-});
-test('queue API sends only scoped token to Edge function, not DB service_role', async () => {
-  const seen = [];
-  const fetcher = async (url, init) => {
-    seen.push({ url: String(url), init });
-    return { ok: true, status: 200, json: async () => ({ row: row() }) };
-  };
-  const queue = new QueueApi('q'.repeat(64), fetcher);
-  assert.equal((await queue.get(ID)).id, ID);
-  assert.ok(seen[0].url.startsWith('https://ayewunekctfmdxgjtqfl.supabase.co/functions/v1/review-bridge-queue'));
-  assert.equal(seen[0].init.headers['x-review-bridge-queue-token'], 'q'.repeat(64));
-  assert.equal(seen[0].init.headers.apikey, undefined);
-});
-
-test('required runtime credentials and trusted master context are checked before claiming', () => {
-  const env = {
-    QUEUE_ID: ID, GH_TOKEN: 'test-read-only-app-token',
-    REVIEW_BRIDGE_QUEUE_TOKEN: 'x'.repeat(64),
-    GITHUB_REPOSITORY: 'AlexBDevCorner/AutonomousWork',
-    GITHUB_REF: 'refs/heads/master',
-  };
-  assert.doesNotThrow(() => assertRuntimeEnvironment(env));
-  assert.throws(() => assertRuntimeEnvironment({ ...env, GH_TOKEN: '' }), /GH_TOKEN missing/);
-  assert.throws(() => assertRuntimeEnvironment({ ...env, REVIEW_BRIDGE_QUEUE_TOKEN: '' }), /Queue token missing/);
-  assert.throws(() => assertRuntimeEnvironment({ ...env, GITHUB_REF: 'refs/heads/untrusted' }), /default branch/);
-});
-
 test('an arbitration-overturned same-head CHANGES_REQUESTED allows exactly one fresh review', () => {
   const changes = review({ id: 7, state: 'CHANGES_REQUESTED' });
   const withLedger = arbitrations => {

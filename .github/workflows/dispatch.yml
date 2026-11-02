@@ -27,11 +27,6 @@ on:
         required: false
         default: ''
         type: string
-  push:
-    branches:
-      - master
-    paths:
-      - automation/dispatcher-heartbeat.txt
 
 concurrency:
   group: autonomous-control

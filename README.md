@@ -154,7 +154,7 @@ Agents must never "helpfully" act outside their role, even if blocked.
     task requirements, `priority`, or other tasks.
 
 - **Reviewer** — the event-driven OpenCode reviewer (`reviewer/OPENCODE_REVIEW.md`)
-  proposes verdicts; the trusted review bridge posts them and guarded-merges:
+  proposes verdicts; model-free Actions jobs post them and guarded-merge:
   - Reviews PRs against task acceptance criteria.
   - Requests changes or approves against the exact current head SHA.
   - After a trusted approval, may merge only when the reviewer protocol's
