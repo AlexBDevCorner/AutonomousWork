@@ -52,7 +52,7 @@ non-blocking P2 suggestions, the model and variant, and the run link. Together
 with the run's `verdict` and `opencode-log` artifacts it is the audit trail.
 
 Model settings: Actions variables `REVIEWER_MODEL` (default
-`opencode-go/deepseek-v4-pro`, chosen for cost over Gemini 4 Argon) and `REVIEWER_VARIANT` (default `high`). There is no
+`opencode-go/deepseek-v4.1-flash`, chosen for cost and its $100/month Go allowance) and `REVIEWER_VARIANT` (default `max`). There is no
 silent downgrade: a variant the model doesn't advertise fails the run.
 
 ## Credentials and activation
