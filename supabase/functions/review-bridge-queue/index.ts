@@ -144,7 +144,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
       const row = value.row;
       if (!expectedPayload(value, ["action", "mode", "row"]) || value.mode !== "live" || !object(row) ||
           !expectedPayload(row, ["repository", "project_id", "task_id", "pr_number", "reviewed_sha",
-            "verdict", "findings", "ci", "review_summary", "observed_at"]) ||
+            "verdict", "findings", "ci", "review_summary", "observed_at", "supersedes_review_id"]) ||
           typeof row.repository !== "string" || !/^AlexBDevCorner\/[A-Za-z0-9_.-]+$/.test(row.repository) ||
           typeof row.project_id !== "string" || !/^[a-z0-9-]+$/.test(row.project_id) ||
           typeof row.task_id !== "string" || !/^[A-Z][A-Z0-9]*-[0-9]+$/.test(row.task_id) ||
@@ -153,14 +153,16 @@ Deno.serve(async (request: Request): Promise<Response> => {
           !ENQUEUE_VERDICTS.has(String(row.verdict)) ||
           !Array.isArray(row.findings) || row.findings.length > 25 || !object(row.ci) ||
           typeof row.review_summary !== "string" || row.review_summary.length > 4000 ||
-          typeof row.observed_at !== "string" || Number.isNaN(Date.parse(row.observed_at))) {
+          typeof row.observed_at !== "string" || Number.isNaN(Date.parse(row.observed_at)) ||
+          (row.supersedes_review_id !== undefined && row.supersedes_review_id !== null &&
+            !(Number.isSafeInteger(row.supersedes_review_id) && (row.supersedes_review_id as number) > 0))) {
         return response(422, { error: "invalid enqueue request" });
       }
       result = await postgres("rpc/review_bridge_enqueue_live_review", dbKey, {
         p_repository: row.repository, p_project_id: row.project_id, p_task_id: row.task_id,
         p_pr_number: row.pr_number, p_reviewed_sha: row.reviewed_sha, p_verdict: row.verdict,
         p_findings: row.findings, p_ci: row.ci, p_review_summary: row.review_summary,
-        p_observed_at: row.observed_at,
+        p_observed_at: row.observed_at, p_supersedes_review_id: row.supersedes_review_id ?? null,
       });
       if (!result.ok) throw new Error("database enqueue status " + result.status);
       const id = await result.json();

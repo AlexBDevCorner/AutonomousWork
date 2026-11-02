@@ -1,7 +1,8 @@
 name: Autonomous review arbitration
-# Independent arbiter for one verified review dispute (#35). This workflow is
-# advisory: it records a validated verdict as an artifact and job summary, and
-# applies nothing. Binding application is a separate, gated deterministic step.
+# Independent arbiter for one verified review dispute (#35). The model job records a
+# validated verdict as an artifact. The model-free decide job publishes it as one
+# machine-verifiable PR comment only when automation/config.json arbitrationEnabled
+# is true; otherwise the run is advisory. The dispatcher applies published decisions.
 run-name: arbitrate ${{ inputs.task_id }} ${{ inputs.review_id }} ${{ inputs.head_sha }}
 
 on:
@@ -152,3 +153,54 @@ jobs:
           path: ${{ runner.temp }}/opencode.log
           retention-days: 30
           if-no-files-found: ignore
+
+  # Model-free: re-verifies the live dispute and the bound verdict, then publishes one
+  # decision comment as the worker App. No approval, merge, push or task edit is possible.
+  decide:
+    needs: arbitrate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: master
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: arbitration-verdict
+          path: ${{ runner.temp }}/arbitration
+      - name: Obtain cross-repo READ-ONLY worker App token
+        id: read-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.AUTONOMOUS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTONOMOUS_APP_PRIVATE_KEY }}
+          owner: AlexBDevCorner
+          repositories: |
+            RepoManager
+            MandarinBotNet
+            MtgSoloSports
+          permission-contents: read
+          permission-pull-requests: read
+          permission-checks: read
+          permission-actions: read
+      - name: Obtain PR comment App token
+        id: comment-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.AUTONOMOUS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTONOMOUS_APP_PRIVATE_KEY }}
+          owner: AlexBDevCorner
+          repositories: |
+            RepoManager
+            MandarinBotNet
+            MtgSoloSports
+          permission-pull-requests: write
+      - name: Publish binding decision when enabled
+        env:
+          GITHUB_TOKEN_READ: ${{ steps.read-token.outputs.token }}
+          GITHUB_TOKEN_WRITE: ${{ steps.comment-token.outputs.token }}
+        run: node tools/autonomy/arbiter.mjs decide "$RUNNER_TEMP/arbitration/verdict.json"

@@ -7,6 +7,8 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { GitHub } from '../autonomy/github.mjs';
 import { QueueApi, evaluate } from './processor.mjs';
+import { decidedArbitration } from '../autonomy/policy.mjs';
+import { decisionVerdict } from '../autonomy/arbitration.mjs';
 
 const SHA = /^[a-f0-9]{40}$/;
 const VERDICTS = new Set(['APPROVE', 'REQUEST_CHANGES', 'WITHHOLD']);
@@ -22,10 +24,13 @@ const text = (x, max) => typeof x === 'string' && x.trim().length > 0 && x.lengt
 
 export function reviewInput(env) {
   const input = { taskId: env.TASK_ID, projectId: env.PROJECT_ID, repository: env.REPOSITORY,
-    pr: Number(env.PR), headSha: env.HEAD_SHA };
+    pr: Number(env.PR), headSha: env.HEAD_SHA,
+    supersedesReviewId: env.SUPERSEDES_REVIEW_ID ? Number(env.SUPERSEDES_REVIEW_ID) : null };
   if (!/^[A-Z][A-Z0-9]*-[0-9]+$/.test(input.taskId ?? '') || !/^[a-z0-9-]+$/.test(input.projectId ?? '') ||
       !/^AlexBDevCorner\/[A-Za-z0-9_.-]+$/.test(input.repository ?? '') ||
-      !/^[1-9][0-9]*$/.test(env.PR ?? '') || !Number.isSafeInteger(input.pr) || !SHA.test(input.headSha ?? ''))
+      !/^[1-9][0-9]*$/.test(env.PR ?? '') || !Number.isSafeInteger(input.pr) || !SHA.test(input.headSha ?? '') ||
+      !/^([1-9][0-9]*)?$/.test(env.SUPERSEDES_REVIEW_ID ?? '') ||
+      (input.supersedesReviewId !== null && !Number.isSafeInteger(input.supersedesReviewId)))
     throw new Error('Invalid review dispatch inputs');
   return input;
 }
@@ -43,8 +48,12 @@ export async function eligibility({ api, input, verdict = 'APPROVE', findings = 
   // The dispatcher commits to control master every tick; re-read instead of failing on that race.
   for (let i = 0; i < 3 && (!decision || decision.reason === 'control_master_advanced'); i++)
     decision = await verify({ api, row: candidateRow(input, verdict, findings, now), now, live: true });
-  if ((decision.status === 'dry_run' && decision.reason === PASS[verdict]) ||
-      (verdict === 'WITHHOLD' && decision.reason === 'reviewer_withheld')) return { eligible: true, decision };
+  // A re-review must supersede exactly the latest trusted review the bridge accepted as overturned;
+  // a first review must supersede nothing. This keeps the queue's per-head dedupe honest.
+  const supersedes = verdict === 'MERGE_CHECK' || verdict === 'WITHHOLD' ||
+    (decision.evidence?.latest_trusted_review_id ?? null) === input.supersedesReviewId;
+  if (supersedes && ((decision.status === 'dry_run' && decision.reason === PASS[verdict]) ||
+      (verdict === 'WITHHOLD' && decision.reason === 'reviewer_withheld'))) return { eligible: true, decision };
   if (NOOP.has(decision.reason)) return { eligible: false, decision };
   throw new Error('Review not eligible: ' + decision.status + '/' + decision.reason);
 }
@@ -113,7 +122,7 @@ export function queueRow(verdict, input, { model, variant, runUrl, ci, now = Dat
   summary = (summary.slice(0, MAX_SUMMARY - footer.length) + footer);
   return {
     repository: input.repository, project_id: input.projectId, task_id: input.taskId, pr_number: input.pr,
-    reviewed_sha: input.headSha, verdict: verdict.verdict,
+    reviewed_sha: input.headSha, verdict: verdict.verdict, supersedes_review_id: input.supersedesReviewId,
     findings: verdict.findings.filter(f => f.severity !== 'P2'),
     ci: { state: ci, reviewer: { model, variant } }, review_summary: summary,
     observed_at: new Date(now).toISOString(),
@@ -139,6 +148,17 @@ export async function collectEvidence({ api, input, dir }) {
   write('reviews.json', pick(reviews, ['user.login', 'state', 'commit_id', 'submitted_at', 'body']));
   write('comments.json', pick(comments, ['user.login', 'created_at', 'body']));
   write('review-comments.json', pick(reviewComments, ['user.login', 'commit_id', 'path', 'line', 'created_at', 'body']));
+  if (input.supersedesReviewId) {
+    // Context for a same-SHA re-review: which finding a binding arbitration overturned, and why.
+    const state = JSON.parse(readFileSync('automation/state.json', 'utf8'));
+    const execution = state.executions.find(e => e.taskId === input.taskId);
+    const record = execution && decidedArbitration(execution, input.supersedesReviewId, input.headSha, 'rereview');
+    if (!record?.decisionCommentId) throw new Error('No binding arbitration record for this re-review');
+    const comment = await api.request('GET', prefix + '/issues/comments/' + record.decisionCommentId);
+    const verdict = decisionVerdict(comment.body);
+    write('arbitration.json', { overturned_review_id: input.supersedesReviewId, decision: verdict.decision,
+      rationale: verdict.rationale, evidence: verdict.evidence, decision_url: record.decisionUrl });
+  }
   return pr.base.sha;
 }
 

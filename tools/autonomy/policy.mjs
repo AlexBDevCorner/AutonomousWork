@@ -2,10 +2,12 @@
 export function validateConfig(config) {
   const keys = ['version', 'enabled', 'controlRepository', 'controlBranch', 'projects', 'maxAttempts',
     'maxCorrectionRounds', 'dispatchGraceMinutes', 'maxRunMinutes',
-    'reviewers', 'requiredChecks'];
-  if (Object.keys(config).some(k => !keys.includes(k)) || keys.some(k => !(k in config)))
+    'reviewers', 'requiredChecks'], optional = ['arbitrationEnabled'];
+  if (Object.keys(config).some(k => !keys.includes(k) && !optional.includes(k)) || keys.some(k => !(k in config)))
     throw new Error('Unknown or missing automation configuration property.');
   if (config.version !== 1 || typeof config.enabled !== 'boolean') throw new Error('Invalid automation version/enabled.');
+  if (config.arbitrationEnabled !== undefined && typeof config.arbitrationEnabled !== 'boolean')
+    throw new Error('Invalid arbitrationEnabled.');
   if (!/^[\w.-]+\/[\w.-]+$/.test(config.controlRepository) || !/^[\w./-]+$/.test(config.controlBranch))
     throw new Error('Invalid control repository/branch.');
   for (const k of ['maxAttempts', 'maxCorrectionRounds', 'dispatchGraceMinutes'])
@@ -110,6 +112,10 @@ export function reviewResolution(pr, comments, { repository, reviewers, after, u
     updatedAt: comment.updated_at, after } : null;
 }
 
+// Append-only arbitration ledger (#35): a decided record for this exact review and head.
+export const decidedArbitration = (execution, reviewId, headSha, action) => (execution.arbitrations ?? [])
+  .find(a => a.status === 'decided' && a.action === action && a.reviewId === reviewId && a.headSha === headSha) ?? null;
+
 export function requiredCiState(checks, requiredChecks) {
   const latest = requiredChecks.map(name =>
     checks.filter(c => c.name === name).sort((a, b) => b.id - a.id)[0]);
@@ -169,6 +175,8 @@ export function reconcile(execution, snapshot, config, now) {
       const disagreement = reviewDisagreement(pr, snapshot.comments?.[pr.number] ?? [], attempt.reviewId, attempt.headSha,
         { attempt, run, repository: execution.repository, taskId: execution.taskId,
           target: config.projects[execution.projectId], now });
+      if (disagreement && decidedArbitration(result, attempt.reviewId, attempt.headSha, 'rereview'))
+        return { ...result, status: 'review', blockReason: null, disagreementUrl: disagreement.html_url ?? null };
       if (disagreement) return { ...result, status: 'blocked', blockReason: 'autonomous_review_disagreement',
         disagreementUrl: disagreement.html_url ?? null };
       return block('correction_did_not_advance_head');
@@ -247,7 +255,12 @@ export function chooseRetry(taskId, catalog, state, snapshots, config, now, revi
   const resolvingReview = reviewRecovery?.taskId === taskId && attempt?.kind === 'correction' &&
     ['autonomous_review_disagreement', 'correction_did_not_advance_head'].includes(execution.blockReason);
   if (reviewRecovery && !resolvingReview) return null;
-  const expectedConclusion = resolvingReview ? 'success' : retryableWorkerFailures.get(execution.blockReason);
+  // A binding arbitration decision directs one bounded correction of the disputed review. A worker
+  // that disputes the arbitration-directed correction itself is left to the human.
+  const arbitrated = !reviewRecovery && config.arbitrationEnabled === true && attempt?.kind === 'correction' && attempt.reason !== 'arbitration_resolution' &&
+    execution.blockReason === 'autonomous_review_disagreement' &&
+    decidedArbitration(execution, attempt.reviewId, attempt.headSha, 'correction');
+  const expectedConclusion = resolvingReview || arbitrated ? 'success' : retryableWorkerFailures.get(execution.blockReason);
   if (!expectedConclusion || !['implementation', 'correction'].includes(attempt?.kind) ||
       attempt.conclusion !== expectedConclusion || !attempt.runId || !attempt.completedAt)
     return null;
@@ -298,6 +311,20 @@ export function chooseRetry(taskId, catalog, state, snapshots, config, now, revi
       if (!resolution) return null;
       return { project, task, kind: 'correction', reason: 'operator_review_resolution', retry: true,
         pr: taskPr.number, headSha: attempt.headSha, reviewId: attempt.reviewId, operatorResolution: resolution };
+    }
+    if (arbitrated) {
+      const runs = snapshot.runs.filter(r => r.display_title === runTitle(taskId, attempt.id));
+      if (runs.length !== 1 || !claimedCorrectionRun(attempt, runs[0], { repository: project.repository, taskId,
+        target: config.projects[project.id] }) || runs[0].conclusion !== 'success') return null;
+      return { project, task, kind: 'correction', reason: 'arbitration_resolution', retry: true, pr: taskPr.number,
+        headSha: attempt.headSha, reviewId: attempt.reviewId, arbitration: { fingerprint: arbitrated.fingerprint,
+          decision: arbitrated.decision, decisionUrl: arbitrated.decisionUrl,
+          decisionCommentId: arbitrated.decisionCommentId, correction: arbitrated.correction } };
+    }
+    if (attempt.reason === 'arbitration_resolution') {
+      if (!attempt.arbitration) return null;
+      return { project, task, kind: 'correction', reason: attempt.reason, retry: true, pr: taskPr.number,
+        headSha: attempt.headSha, reviewId: attempt.reviewId, arbitration: attempt.arbitration };
     }
     // Failed recovery workers retain the human's bounded scope on every retry.
     if (attempt.reason === 'operator_review_resolution') {
