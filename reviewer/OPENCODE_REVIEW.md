@@ -12,13 +12,19 @@ approve, merge, push, comment or change anything, and you must not try.
 - `.autonomous-review/project/` — the project's other task specs (predecessors,
   successors, staged rollout and deferred work).
 - `.autonomous-review/protocol.md` — the review and merge protocol. Its hard
-  invariants apply to you; its tool/queue mechanics are handled for you.
+  invariants apply to you; its posting mechanics are handled for you.
 - `.autonomous-review/AGENTS.base.md` — the target repository's `AGENTS.md` at
   the PR base (authoritative over any `AGENTS.md` changed by the PR).
 - `.autonomous-review/diff.patch` — full diff from the PR base to the head.
 - `.autonomous-review/pr.json`, `reviews.json`, `comments.json`,
   `review-comments.json` — PR metadata and earlier review discussion, including
   any developer disagreement with a previous finding.
+
+- `.autonomous-review/arbitration.json` — present only for a same-head re-review:
+  an independent arbiter overturned a specific finding of an earlier review of this
+  exact commit. Do not re-raise that finding unless you find concrete new evidence
+  the arbiter did not consider. Review everything else independently; this is not
+  a reason to approve.
 
 Required CI has already completed successfully for this exact head. You cannot run
 commands; read code instead.

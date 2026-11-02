@@ -1,0 +1,206 @@
+name: Autonomous review arbitration
+# Independent arbiter for one verified review dispute (#35). The model job records a
+# validated verdict as an artifact. The model-free decide job publishes it as one
+# machine-verifiable PR comment only when automation/config.json arbitrationEnabled
+# is true; otherwise the run is advisory. The dispatcher applies published decisions.
+run-name: arbitrate ${{ inputs.task_id }} ${{ inputs.review_id }} ${{ inputs.head_sha }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      task_id:
+        description: "Blocked task ID"
+        required: true
+        type: string
+      project_id:
+        description: "Control project ID"
+        required: true
+        type: string
+      repository:
+        description: "Target Owner/Repo"
+        required: true
+        type: string
+      pr:
+        description: "Recorded autonomous PR number"
+        required: true
+        type: string
+      head_sha:
+        description: "Exact disputed (unchanged) head SHA"
+        required: true
+        type: string
+      review_id:
+        description: "Disputed trusted CHANGES_REQUESTED review ID"
+        required: true
+        type: string
+      fingerprint:
+        description: "Dispute fingerprint from the deterministic request"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arbitration-${{ inputs.repository }}-${{ inputs.pr }}
+  cancel-in-progress: false
+
+env:
+  TASK_ID: ${{ inputs.task_id }}
+  PROJECT_ID: ${{ inputs.project_id }}
+  REPOSITORY: ${{ inputs.repository }}
+  PR: ${{ inputs.pr }}
+  HEAD_SHA: ${{ inputs.head_sha }}
+  REVIEW_ID: ${{ inputs.review_id }}
+  FINGERPRINT: ${{ inputs.fingerprint }}
+  # Independent from the coding worker and the reviewer; never silently downgraded.
+  ARBITER_MODEL: ${{ vars.ARBITER_MODEL || 'opencode-go/kimi-k3.1-pro' }}
+  ARBITER_VARIANT: ${{ vars.ARBITER_VARIANT || 'max' }}
+
+jobs:
+  # Holds only the model credential and untrusted PR files; no GitHub write token.
+  arbitrate:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: master
+          path: control
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run arbitration policy tests
+        run: node --test control/tools/autonomy/*.test.mjs
+      - name: Obtain cross-repo READ-ONLY worker App token
+        id: read-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.AUTONOMOUS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTONOMOUS_APP_PRIVATE_KEY }}
+          owner: AlexBDevCorner
+          repositories: |
+            RepoManager
+            MandarinBotNet
+            MtgSoloSports
+          permission-contents: read
+          permission-pull-requests: read
+          permission-checks: read
+          permission-actions: read
+      - name: Re-verify the live dispute and collect evidence
+        id: prepare
+        working-directory: control
+        env:
+          GITHUB_TOKEN_READ: ${{ steps.read-token.outputs.token }}
+          EVIDENCE_DIR: ${{ runner.temp }}/evidence
+        run: node tools/autonomy/arbiter.mjs prepare
+      - name: Check out exact disputed head as data
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ inputs.repository }}
+          ref: ${{ inputs.head_sha }}
+          token: ${{ steps.read-token.outputs.token }}
+          path: pr
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Assemble read-only arbitration workspace
+        env:
+          BASE_SHA: ${{ steps.prepare.outputs.base_sha }}
+        run: bash control/tools/review-bridge/workspace.sh pr "$BASE_SHA" "$HEAD_SHA" "$RUNNER_TEMP/evidence"
+      - name: Install pinned OpenCode CLI
+        run: |
+          npm install --global opencode-ai@1.18.35
+          opencode --version
+      - name: Confirm configured arbiter model and variant are available
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          opencode models "${ARBITER_MODEL%%/*}" --verbose > "$RUNNER_TEMP/models.txt"
+          node control/tools/review-bridge/opencode-review.mjs check-model "$RUNNER_TEMP/models.txt" "$ARBITER_MODEL" "$ARBITER_VARIANT"
+      - name: Run OpenCode arbiter with read-only tools
+        timeout-minutes: 45
+        working-directory: pr
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          OPENCODE_CONFIG_CONTENT: '{"permission":{"read":"allow","glob":"allow","grep":"allow","list":"allow","edit":"deny","bash":"deny","task":"deny","external_directory":"deny","todowrite":"deny","webfetch":"deny","websearch":"deny","lsp":"deny","skill":"deny","question":"deny","doom_loop":"deny"}}'
+        shell: bash
+        run: |
+          set -euo pipefail
+          start=$(date +%s)
+          opencode run --model "$ARBITER_MODEL" --variant "$ARBITER_VARIANT" \
+            "$(cat ../control/reviewer/ARBITER.md)" 2>&1 | tee "$RUNNER_TEMP/opencode.log"
+          echo "- Arbiter latency: $(( $(date +%s) - start ))s" >> "$GITHUB_STEP_SUMMARY"
+      - name: Validate bound arbitration verdict
+        env:
+          DISPUTE_FILE: pr/.autonomous-review/dispute.json
+          VERDICT_FILE: ${{ runner.temp }}/arbitration/verdict.json
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/arbitration"
+          node control/tools/autonomy/arbiter.mjs parse "$RUNNER_TEMP/opencode.log"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arbitration-verdict
+          path: ${{ runner.temp }}/arbitration/verdict.json
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: arbitration-log
+          path: ${{ runner.temp }}/opencode.log
+          retention-days: 30
+          if-no-files-found: ignore
+
+  # Model-free: re-verifies the live dispute and the bound verdict, then publishes one
+  # decision comment as the worker App. No approval, merge, push or task edit is possible.
+  decide:
+    needs: arbitrate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: master
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: arbitration-verdict
+          path: ${{ runner.temp }}/arbitration
+      - name: Obtain cross-repo READ-ONLY worker App token
+        id: read-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.AUTONOMOUS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTONOMOUS_APP_PRIVATE_KEY }}
+          owner: AlexBDevCorner
+          repositories: |
+            RepoManager
+            MandarinBotNet
+            MtgSoloSports
+          permission-contents: read
+          permission-pull-requests: read
+          permission-checks: read
+          permission-actions: read
+      - name: Obtain PR comment App token
+        id: comment-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.AUTONOMOUS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTONOMOUS_APP_PRIVATE_KEY }}
+          owner: AlexBDevCorner
+          repositories: |
+            RepoManager
+            MandarinBotNet
+            MtgSoloSports
+          permission-pull-requests: write
+      - name: Publish binding decision when enabled
+        env:
+          GITHUB_TOKEN_READ: ${{ steps.read-token.outputs.token }}
+          GITHUB_TOKEN_WRITE: ${{ steps.comment-token.outputs.token }}
+        run: node tools/autonomy/arbiter.mjs decide "$RUNNER_TEMP/arbitration/verdict.json"

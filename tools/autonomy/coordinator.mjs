@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { chooseWork, chooseRetry, reconcile, latestAttempt, latestReview, ciGreen, requiredCiState, replaceStatus, summary, validateConfig, budgetCounts, budgetForAttempt } from './policy.mjs';
+import { chooseWork, chooseRetry, reconcile, latestAttempt, latestReview, ciGreen, requiredCiState, replaceStatus, summary, validateConfig, budgetCounts, budgetForAttempt, decidedArbitration } from './policy.mjs';
+import { ARBITRATION_WORKFLOW, arbitrationDecision, arbitrationRecord, arbitrationRequest, planArbitration } from './arbitration.mjs';
 
 export function validateState(catalog, state, config) {
   validateConfig(config);
@@ -29,8 +30,8 @@ export function validateState(catalog, state, config) {
 
 export const REVIEW_WORKFLOW = 'autonomous-review.yml';
 export const MAX_REVIEW_RUNS = 3;
-export const reviewTitle = (mode, taskId, headSha) =>
-  `${mode === 'merge_check' ? 'merge-check' : 'review'} ${taskId} ${headSha}`;
+export const reviewTitle = (mode, taskId, headSha, supersedesReviewId) =>
+  `${mode === 'merge_check' ? 'merge-check' : 'review'} ${taskId} ${headSha}${supersedesReviewId ? ' after ' + supersedesReviewId : ''}`;
 
 // One model review (or merge check) per exact head. The unique run title correlates uncertain
 // dispatches; failed runs (quota, provider, parse) are retried on later ticks up to MAX_REVIEW_RUNS.
@@ -38,13 +39,13 @@ export async function dispatchReviews(items, config, api) {
   if (!items.length) return;
   const runs = await api.reviewRuns(config.controlRepository, REVIEW_WORKFLOW);
   for (const item of items) {
-    const mine = runs.filter(r => r.display_title === reviewTitle(item.mode, item.taskId, item.headSha));
+    const mine = runs.filter(r => r.display_title === reviewTitle(item.mode, item.taskId, item.headSha, item.supersedesReviewId));
     item.reviewRuns = mine.length;
     if (mine.some(r => r.status !== 'completed' || r.conclusion === 'success') || mine.length >= MAX_REVIEW_RUNS) continue;
     try {
       await api.dispatch(config.controlRepository, { workflow: REVIEW_WORKFLOW, branch: config.controlBranch }, {
         mode: item.mode, task_id: item.taskId, project_id: item.projectId, repository: item.repository,
-        pr: String(item.pr), head_sha: item.headSha });
+        pr: String(item.pr), head_sha: item.headSha, supersedes_review_id: String(item.supersedesReviewId ?? '') });
       item.reviewDispatch = 'sent';
     } catch {
       // Never assume the POST failed server-side; the next tick correlates by title.
@@ -60,7 +61,11 @@ export async function coordinate({ catalog, state: initial, config, sourceSha, t
   validateState(catalog, initial, config);
   const state = structuredClone(initial), model = structuredClone(catalog), texts = { ...taskTexts };
   let parent = sourceSha;
-  const changes = {}, snapshots = {}, reviewQueue = [];
+  const changes = {}, snapshots = {}, reviewQueue = [], arbitrationDispatches = [];
+  // Binding arbitration (#35) is a human-owned switch; runs are listed only when a dispute exists.
+  const arbitrating = config.enabled && config.arbitrationEnabled === true;
+  let controlArbitrationRuns;
+  const arbitrationRuns = async () => controlArbitrationRuns ??= await api.reviewRuns(config.controlRepository, ARBITRATION_WORKFLOW);
   const status = (record, next) => {
     const task = model.tasks.find(t => t.id === record.taskId);
     if (task.status === next) return;
@@ -84,6 +89,19 @@ export async function coordinate({ catalog, state: initial, config, sourceSha, t
         ? next.blockReason : e.blockReason;
       next = { ...next, status: 'blocked', blockReason: reason };
     }
+    const request = arbitrating && next.status === 'blocked' ? arbitrationRequest(next, snapshots[e.projectId], config, now) : null;
+    if (request && !(next.arbitrations ?? []).some(a => a.fingerprint === request.fingerprint)) {
+      const runs = await arbitrationRuns(), prNow = snapshots[e.projectId].prs.find(p => p.number === request.pr);
+      const decision = arbitrationDecision(prNow, snapshots[e.projectId].comments?.[request.pr] ?? [], request, runs);
+      const plan = decision ? null : planArbitration(next, request, runs);
+      // Append-only: earlier attempts, reasons and dispute URLs are preserved.
+      if (decision) next = { ...next, arbitrations: [...(next.arbitrations ?? []), arbitrationRecord(request, decision.outcome, now, decision)] };
+      else if (plan.action === 'escalate')
+        next = { ...next, arbitrations: [...(next.arbitrations ?? []), arbitrationRecord(request, { status: 'escalated', action: 'hold', reason: plan.reason }, now)] };
+      else if (plan.action === 'dispatch') arbitrationDispatches.push({ projectId: e.projectId, request });
+      // An overturned finding returns the unchanged head to an independent same-SHA re-review.
+      if (decision?.outcome.action === 'rereview') next = { ...next, status: 'review', blockReason: null };
+    }
     const pr = snapshots[e.projectId].prs.find(p => p.number === next.pr);
     if (pr && next.status === 'review') {
       const checks = snapshots[e.projectId].checks[pr.number] ?? [];
@@ -94,9 +112,12 @@ export async function coordinate({ catalog, state: initial, config, sourceSha, t
       else if (ci.state === 'green' && review?.state === 'CHANGES_REQUESTED' &&
           budgetCounts(next).correction >= config.maxCorrectionRounds)
         next = { ...next, status: 'blocked', blockReason: 'autonomous_review_loop_exceeded' };
+      // A CHANGES_REQUESTED whose finding a binding arbitration overturned needs a fresh same-SHA review.
+      const overturned = review?.state === 'CHANGES_REQUESTED' && decidedArbitration(next, review.id, pr.head.sha, 'rereview');
       // An approved but unmerged exact head needs a model-free MERGE_CHECK, never a second review.
-      if (next.status === 'review' && ci.state === 'green' && (!review || review.state === 'APPROVED') && !pr.draft)
-        reviewQueue.push({ mode: review ? 'merge_check' : 'review',
+      if (next.status === 'review' && ci.state === 'green' && (!review || review.state === 'APPROVED' || overturned) && !pr.draft)
+        reviewQueue.push({ mode: review?.state === 'APPROVED' ? 'merge_check' : 'review',
+          ...(overturned ? { supersedesReviewId: review.id } : {}),
           projectId: e.projectId, repository: e.repository, taskId: e.taskId, pr: pr.number,
           headSha: pr.head.sha, ciGreen: ciGreen(checks, config.requiredChecks),
           taskPath: task.relativePath, sourceControlSha: latestAttempt(e).sourceControlSha });
@@ -128,7 +149,8 @@ export async function coordinate({ catalog, state: initial, config, sourceSha, t
     const fresh = select();
     if (!fresh || fresh.task.id !== selected.task.id || fresh.headSha !== selected.headSha ||
         fresh.reviewId !== selected.reviewId || fresh.reason !== selected.reason ||
-        JSON.stringify(fresh.operatorResolution) !== JSON.stringify(selected.operatorResolution))
+        JSON.stringify(fresh.operatorResolution) !== JSON.stringify(selected.operatorResolution) ||
+        JSON.stringify(fresh.arbitration) !== JSON.stringify(selected.arbitration))
       throw new Error('Target changed during dispatch planning; no claim or dispatch made.');
     let execution = state.executions.find(e => e.taskId === selected.task.id);
     if (!execution) {
@@ -139,6 +161,7 @@ export async function coordinate({ catalog, state: initial, config, sourceSha, t
     const attempt = { id: newId(), kind: selected.kind, startedAt: new Date(now).toISOString(), sourceControlSha: sourceSha,
       dispatchStatus: 'pending', ...(selected.reason ? { reason: selected.reason } : {}),
       ...(selected.operatorResolution ? { operatorResolution: selected.operatorResolution } : {}),
+      ...(selected.arbitration ? { arbitration: selected.arbitration } : {}),
       ...(selected.reviewId ? { reviewId: selected.reviewId } : {}),
       ...((selected.kind === 'correction' || selected.reason === 'ci_repair') && selected.headSha ? { headSha: selected.headSha } : {}) };
     const budget = budgetForAttempt(execution, attempt, config);
@@ -167,6 +190,15 @@ export async function coordinate({ catalog, state: initial, config, sourceSha, t
     await save(`Record dispatch receipt for ${execution.taskId}`);
   } else if (apply && (JSON.stringify(state) !== JSON.stringify(initial) || Object.keys(changes).length)) {
     await save('Reconcile autonomous execution state');
+  }
+  if (apply && arbitrating) {
+    for (const { projectId, request } of arbitrationDispatches) {
+      try {
+        await api.dispatch(config.controlRepository, { workflow: ARBITRATION_WORKFLOW, branch: config.controlBranch }, {
+          task_id: request.taskId, project_id: projectId, repository: request.repository, pr: String(request.pr),
+          head_sha: request.headSha, review_id: String(request.reviewId), fingerprint: request.fingerprint });
+      } catch { /* Uncertain POST: the next tick correlates the run by title. */ }
+    }
   }
   if (apply && config.enabled)
     await dispatchReviews(reviewQueue.filter(item => config.projects[item.projectId].reviewEnabled), config, api);

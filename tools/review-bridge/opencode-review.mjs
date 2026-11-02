@@ -1,12 +1,15 @@
 // Event-driven OpenCode reviewer (#37). The model only reads files and prints a
 // verdict; this module decides eligibility and validates the verdict deterministically.
-// Commands: prepare | merge-check | check-model <models.txt> | parse <opencode.log> | enqueue <verdict.json>
+// Commands: prepare | merge-check | check-model <models.txt> <model> <variant> | parse <opencode.log> | apply <verdict.json>
 import { randomUUID } from 'node:crypto';
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { GitHub } from '../autonomy/github.mjs';
-import { QueueApi, evaluate } from './processor.mjs';
+import { evaluate } from './processor.mjs';
+import { githubWrite, guardedMerge, postReview } from './reviewer.mjs';
+import { decidedArbitration } from '../autonomy/policy.mjs';
+import { decisionVerdict } from '../autonomy/arbitration.mjs';
 
 const SHA = /^[a-f0-9]{40}$/;
 const VERDICTS = new Set(['APPROVE', 'REQUEST_CHANGES', 'WITHHOLD']);
@@ -22,10 +25,13 @@ const text = (x, max) => typeof x === 'string' && x.trim().length > 0 && x.lengt
 
 export function reviewInput(env) {
   const input = { taskId: env.TASK_ID, projectId: env.PROJECT_ID, repository: env.REPOSITORY,
-    pr: Number(env.PR), headSha: env.HEAD_SHA };
+    pr: Number(env.PR), headSha: env.HEAD_SHA,
+    supersedesReviewId: env.SUPERSEDES_REVIEW_ID ? Number(env.SUPERSEDES_REVIEW_ID) : null };
   if (!/^[A-Z][A-Z0-9]*-[0-9]+$/.test(input.taskId ?? '') || !/^[a-z0-9-]+$/.test(input.projectId ?? '') ||
       !/^AlexBDevCorner\/[A-Za-z0-9_.-]+$/.test(input.repository ?? '') ||
-      !/^[1-9][0-9]*$/.test(env.PR ?? '') || !Number.isSafeInteger(input.pr) || !SHA.test(input.headSha ?? ''))
+      !/^[1-9][0-9]*$/.test(env.PR ?? '') || !Number.isSafeInteger(input.pr) || !SHA.test(input.headSha ?? '') ||
+      !/^([1-9][0-9]*)?$/.test(env.SUPERSEDES_REVIEW_ID ?? '') ||
+      (input.supersedesReviewId !== null && !Number.isSafeInteger(input.supersedesReviewId)))
     throw new Error('Invalid review dispatch inputs');
   return input;
 }
@@ -43,8 +49,12 @@ export async function eligibility({ api, input, verdict = 'APPROVE', findings = 
   // The dispatcher commits to control master every tick; re-read instead of failing on that race.
   for (let i = 0; i < 3 && (!decision || decision.reason === 'control_master_advanced'); i++)
     decision = await verify({ api, row: candidateRow(input, verdict, findings, now), now, live: true });
-  if ((decision.status === 'dry_run' && decision.reason === PASS[verdict]) ||
-      (verdict === 'WITHHOLD' && decision.reason === 'reviewer_withheld')) return { eligible: true, decision };
+  // A re-review must supersede exactly the latest trusted review the bridge accepted as overturned;
+  // a first review must supersede nothing. A forged input can neither re-review a head nor load another dispute.
+  const supersedes = verdict === 'MERGE_CHECK' || verdict === 'WITHHOLD' ||
+    (decision.evidence?.latest_trusted_review_id ?? null) === input.supersedesReviewId;
+  if (supersedes && ((decision.status === 'dry_run' && decision.reason === PASS[verdict]) ||
+      (verdict === 'WITHHOLD' && decision.reason === 'reviewer_withheld'))) return { eligible: true, decision };
   if (NOOP.has(decision.reason)) return { eligible: false, decision };
   throw new Error('Review not eligible: ' + decision.status + '/' + decision.reason);
 }
@@ -97,7 +107,8 @@ export function parseVerdict(log) {
 
 const where = f => f.path && f.line ? f.path + ':' + f.line : f.location ?? f.path ?? 'general';
 
-export function queueRow(verdict, input, { model, variant, runUrl, ci, now = Date.now() }) {
+// The in-memory review row the bridge's guarded writers consume (never persisted).
+export function reviewRow(verdict, input, { model, variant, runUrl, ci, now = Date.now() }) {
   const footer = '\n\nReviewer: OpenCode ' + model + ' (' + variant + ')' + (runUrl ? ' — ' + runUrl : '');
   let summary = 'Deployment context: ' + verdict.deployment_context.trim() + '\n\n' + verdict.summary.trim();
   const suggestions = verdict.findings.filter(f => f.severity === 'P2');
@@ -111,13 +122,24 @@ export function queueRow(verdict, input, { model, variant, runUrl, ci, now = Dat
     }
   }
   summary = (summary.slice(0, MAX_SUMMARY - footer.length) + footer);
-  return {
-    repository: input.repository, project_id: input.projectId, task_id: input.taskId, pr_number: input.pr,
-    reviewed_sha: input.headSha, verdict: verdict.verdict,
-    findings: verdict.findings.filter(f => f.severity !== 'P2'),
-    ci: { state: ci, reviewer: { model, variant } }, review_summary: summary,
-    observed_at: new Date(now).toISOString(),
-  };
+  return { ...candidateRow(input, verdict.verdict, verdict.findings.filter(f => f.severity !== 'P2'), now),
+    ci: { state: ci, reviewer: { model, variant } }, review_summary: summary };
+}
+
+// Re-checks the verdict against live state, then applies it only through the bridge's guarded,
+// independently confirmed GitHub writes. A changed head/CI/review discards the verdict.
+export async function publish({ verdict, input, api, writes, meta, check = eligibility }) {
+  const blocking = verdict.findings.filter(f => f.severity !== 'P2');
+  const { eligible, decision } = await check({ api, input, verdict: verdict.verdict, findings: blocking });
+  if (!eligible) return { outcome: 'discarded', reason: decision.reason };
+  const row = reviewRow(verdict, input, { ...meta, ci: decision.evidence?.ci ?? 'unknown' });
+  // An escalation posts no review; a PR comment makes it visible to the human.
+  if (verdict.verdict === 'WITHHOLD') { await writes.comment(row); return { outcome: 'withheld', row }; }
+  const reviewId = await writes.review(row);
+  if (verdict.verdict !== 'APPROVE') return { outcome: 'review_posted', reviewId, row };
+  const merge = await writes.merge(row);
+  return merge.merged ? { outcome: 'merged', reviewId, mergeSha: merge.sha, row }
+    : { outcome: 'review_posted_merge_withheld', reviewId, reason: merge.decision?.reason, row };
 }
 
 const pick = (items, fields) => items.map(i => Object.fromEntries(fields.map(f => [f, f.split('.').reduce((o, k) => o?.[k], i) ?? null])));
@@ -139,6 +161,17 @@ export async function collectEvidence({ api, input, dir }) {
   write('reviews.json', pick(reviews, ['user.login', 'state', 'commit_id', 'submitted_at', 'body']));
   write('comments.json', pick(comments, ['user.login', 'created_at', 'body']));
   write('review-comments.json', pick(reviewComments, ['user.login', 'commit_id', 'path', 'line', 'created_at', 'body']));
+  if (input.supersedesReviewId) {
+    // Context for a same-SHA re-review: which finding a binding arbitration overturned, and why.
+    const state = JSON.parse(readFileSync('automation/state.json', 'utf8'));
+    const execution = state.executions.find(e => e.taskId === input.taskId);
+    const record = execution && decidedArbitration(execution, input.supersedesReviewId, input.headSha, 'rereview');
+    if (!record?.decisionCommentId) throw new Error('No binding arbitration record for this re-review');
+    const comment = await api.request('GET', prefix + '/issues/comments/' + record.decisionCommentId);
+    const verdict = decisionVerdict(comment.body);
+    write('arbitration.json', { overturned_review_id: input.supersedesReviewId, decision: verdict.decision,
+      rationale: verdict.rationale, evidence: verdict.evidence, decision_url: record.decisionUrl });
+  }
   return pr.base.sha;
 }
 
@@ -146,11 +179,13 @@ function output(env, values) {
   if (env.GITHUB_OUTPUT) appendFileSync(env.GITHUB_OUTPUT, Object.entries(values).map(([k, v]) => k + '=' + v + '\n').join(''));
 }
 
-async function main([command, file]) {
+async function main([command, file, ...rest]) {
   const env = process.env;
   if (command === 'check-model') {
-    checkModel(readFileSync(file, 'utf8'), env.REVIEWER_MODEL, env.REVIEWER_VARIANT);
-    console.info('Reviewer model confirmed:', env.REVIEWER_MODEL, env.REVIEWER_VARIANT);
+    // Shared by the reviewer and the arbiter, which use independently configured models.
+    const [model, variant] = rest;
+    checkModel(readFileSync(file, 'utf8'), model, variant);
+    console.info('Model confirmed:', model, variant);
     return;
   }
   if (command === 'parse') {
@@ -173,36 +208,44 @@ async function main([command, file]) {
     output(env, { eligible: 'true', base_sha: base });
     return;
   }
-  if (env.GITHUB_REPOSITORY !== 'AlexBDevCorner/AutonomousWork' || env.GITHUB_REF !== 'refs/heads/master')
-    throw new Error('Enqueue must run on the control default branch');
-  const queue = new QueueApi(env.REVIEW_BRIDGE_QUEUE_TOKEN, fetch, 'live');
+  if (env.GITHUB_REPOSITORY !== 'AlexBDevCorner/AutonomousWork' || env.GITHUB_REF !== 'refs/heads/master' ||
+      env.AUTONOMOUS_REVIEW_ENABLED !== 'true' || !env.MERGE_GH_TOKEN)
+    throw new Error('GitHub writes must run enabled on the control default branch with the App token');
+  const merge = row => guardedMerge({ api, fetcher: fetch, token: env.MERGE_GH_TOKEN, row, clock: Date.now });
   if (command === 'merge-check') {
-    // Model-free: an existing trusted exact-head approval only needs the bridge's guarded merge.
-    const { eligible, decision } = await eligibility({ api, input, verdict: 'MERGE_CHECK' });
-    if (!eligible) { console.info('No merge check needed:', decision.reason); return; }
-    const id = await queue.enqueue({ repository: input.repository, project_id: input.projectId,
-      task_id: input.taskId, pr_number: input.pr, reviewed_sha: input.headSha, verdict: 'MERGE_CHECK',
-      findings: [], ci: { state: decision.evidence?.ci ?? 'unknown' },
-      review_summary: 'Merge check for an existing trusted exact-head approval.', observed_at: new Date().toISOString() });
-    console.info(id ? 'Queued merge check ' + id : 'Merge check already pending for this head');
-    return;
+    // Model-free: an existing trusted exact-head approval only needs the bridge's guarded merge,
+    // which re-evaluates every merge guard twice and merges with the expected head SHA.
+    const result = await merge(candidateRow(input, 'MERGE_CHECK', [], Date.now()));
+    if (result.merged) { console.info('Merged', input.repository + '#' + input.pr, result.sha); return; }
+    if (NOOP.has(result.decision?.reason) || result.decision?.reason === 'head_changed_before_merge') {
+      console.info('No merge needed:', result.decision.reason);
+      return;
+    }
+    // Fail so the dispatcher's bounded retry re-checks a possibly transient guard.
+    throw new Error('Merge withheld: ' + result.decision?.status + '/' + result.decision?.reason);
   }
-  if (command === 'enqueue') {
+  if (command === 'apply') {
+    if (!env.AUTONOMOUS_REVIEWER_TOKEN) throw new Error('Independent reviewer token missing');
     const verdict = validateVerdict(JSON.parse(readFileSync(file, 'utf8')));
-    const blocking = verdict.findings.filter(f => f.severity !== 'P2');
-    // Re-check against live state: a head/CI/review change since the model ran discards the verdict.
-    const { eligible, decision } = await eligibility({ api, input, verdict: verdict.verdict, findings: blocking });
-    if (!eligible) { console.info('Verdict discarded:', decision.reason); return; }
-    const row = queueRow(verdict, input, { model: env.REVIEWER_MODEL, variant: env.REVIEWER_VARIANT,
-      runUrl: env.RUN_URL, ci: decision.evidence?.ci ?? 'unknown' });
-    const id = await queue.enqueue(row);
-    console.info(id ? 'Queued verdict ' + id : 'Exact-head verdict already queued; not duplicated');
+    const writes = {
+      review: row => postReview({ api, fetcher: fetch, row, reviewerToken: env.AUTONOMOUS_REVIEWER_TOKEN,
+        appToken: env.MERGE_GH_TOKEN }),
+      merge,
+      comment: row => githubWrite({ fetcher: fetch, token: env.MERGE_GH_TOKEN, method: 'POST',
+        path: '/repos/' + row.repository + '/issues/' + row.pr_number + '/comments',
+        body: { body: '<!-- autonomous-review-withheld:v1 -->\nAutonomous review withheld for ' + row.reviewed_sha +
+          '; a human decision is needed.\n\n' + row.review_summary } }),
+    };
+    const result = await publish({ verdict, input, api, writes,
+      meta: { model: env.REVIEWER_MODEL, variant: env.REVIEWER_VARIANT, runUrl: env.RUN_URL } });
+    console.info('OpenCode review:', result.outcome, result.reason ?? '', result.reviewId ?? '', result.mergeSha ?? '');
     if (env.GITHUB_STEP_SUMMARY) appendFileSync(env.GITHUB_STEP_SUMMARY,
       '### OpenCode review ' + input.taskId + ' #' + input.pr + '\n- Verdict: ' + verdict.verdict +
-      '\n- Queue: ' + (id ?? 'duplicate') + '\n\n' + row.review_summary + '\n');
+      '\n- Outcome: ' + result.outcome + (result.reason ? ' (' + result.reason + ')' : '') +
+      '\n\n' + (result.row?.review_summary ?? '') + '\n');
     return;
   }
-  throw new Error('Usage: opencode-review.mjs prepare | merge-check | check-model <file> | parse <file> | enqueue <file>');
+  throw new Error('Usage: opencode-review.mjs prepare | merge-check | check-model <file> <model> <variant> | parse <file> | apply <file>');
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
