@@ -1,107 +1,13 @@
-// Deterministic Step 3 bridge processor. Never imports any GitHub write API.
-// GitHub Actions checks out only the trusted default-branch control repository.
+// Deterministic review/merge guard evaluation against live control and GitHub state.
+// Never imports any GitHub write API.
 import { Buffer } from 'node:buffer';
-import { appendFileSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
-import { GitHub } from '../autonomy/github.mjs';
 import {
-  isUuid, terminal, validateRecord, validatePlanning, validateGitHub,
+  validateRecord, validatePlanning, validateGitHub,
   parseControlPin, taskPath, PROTOCOL_BLOB_SHA,
 } from './guards.mjs';
 
 const CONTROL = 'AlexBDevCorner/AutonomousWork';
-const EDGE = 'https://ayewunekctfmdxgjtqfl.supabase.co/functions/v1/review-bridge-queue';
 const SHA = /^[a-f0-9]{40}$/;
-const SAFE_REASON = /^[a-z0-9_]+$/;
-
-export class QueueApi {
-  constructor(token, fetcher = fetch, mode = "test") {
-    if (!token || token.length < 32)
-      throw new Error('REVIEW_BRIDGE_QUEUE_TOKEN missing or too short');
-    this.token = token;
-    this.fetcher = fetcher;
-    if (!["test","live"].includes(mode)) throw new Error("Unknown queue mode");
-    this.mode = mode;
-  }
-  async request(method, id, data) {
-    if (!isUuid(id)) throw new Error('Invalid queue UUID');
-    const url = new URL(EDGE);
-    if (method === 'GET') url.searchParams.set('id', id);
-    if (method === 'GET' && this.mode === "live") url.searchParams.set("mode", "live");
-    const response = await this.fetcher(url, {
-      method,
-      redirect: 'error',
-      headers: {
-        'x-review-bridge-queue-token': this.token,
-        Accept: 'application/json',
-        ...(method === 'POST' ? { 'Content-Type': 'application/json' } : {}),
-      },
-      ...(method === 'POST' ? { body: JSON.stringify({ id, ...(this.mode === 'live' ? { mode: 'live' } : {}), ...data }) } : {}),
-      signal: AbortSignal.timeout(20000),
-    });
-    if (method === 'GET' && response.status === 404) return null;
-    if (method === 'POST' && data?.action === 'finish' && response.status === 409)
-      throw new Error('Lease lost before acknowledgement: refusing to finalize');
-    if (!response.ok) throw new Error('Queue API ' + method + ' returned HTTP ' + response.status);
-    return response.json();
-  }
-  async recoverable(limit = 10) {
-    if (this.mode !== "live") throw new Error("Recovery listing is live-only");
-    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 25)
-      throw new Error("Invalid recovery limit");
-    const url = new URL(EDGE);
-    url.searchParams.set("mode", "live");
-    url.searchParams.set("action", "recoverable");
-    url.searchParams.set("limit", String(limit));
-    const response = await this.fetcher(url, {
-      method: "GET",
-      redirect: "error",
-      headers: {
-        "x-review-bridge-queue-token": this.token,
-        Accept: "application/json",
-      },
-      signal: AbortSignal.timeout(20000),
-    });
-    if (!response.ok) throw new Error("Queue recovery GET returned HTTP " + response.status);
-    const payload = await response.json();
-    if (!Array.isArray(payload?.ids) ||
-        payload.ids.some(id => !isUuid(id)) ||
-        new Set(payload.ids).size !== payload.ids.length ||
-        payload.ids.length > limit) {
-      throw new Error("Malformed recovery queue response");
-    }
-    return payload.ids;
-  }
-  async get(id) {
-    const payload = await this.request('GET', id);
-    if (!payload) return null;
-    if (!payload.row || payload.row.id !== id) throw new Error('Queue read returned wrong UUID');
-    return payload.row;
-  }
-  async claim(id) {
-    const response = await this.request('POST', id, { action: 'claim' });
-    if (typeof response?.claimed !== 'boolean') throw new Error('Malformed queue claim response');
-    return response.claimed ? response.row : null;
-  }
-  async finish(id, token, verdict) {
-    const statuses = this.mode === 'live'
-      ? ['applied','withheld','stale','failed','retryable']
-      : ['dry_run','withheld','stale','failed','retryable'];
-    if (!isUuid(token) || !statuses.includes(verdict.status) ||
-        !SAFE_REASON.test(verdict.reason ?? '') || !verdict.evidence || typeof verdict.evidence !== 'object') {
-      throw new Error('Invalid lease completion');
-    }
-    const body = {
-      action: 'finish', claim_token: token, status: verdict.status,
-      reason: verdict.reason, evidence: verdict.evidence,
-      ...(this.mode === 'live' ? {
-        review_id: verdict.review_id ?? null, merge_sha: verdict.merge_sha ?? null,
-      } : {}),
-    };
-    const reply = await this.request('POST', id, body);
-    if (reply?.finished !== true) throw new Error('Queue did not acknowledge lease completion');
-  }
-}
 
 function decodeFile(file) {
   if (!file || file.encoding !== 'base64' || typeof file.content !== 'string' || !SHA.test(file.sha ?? ''))
@@ -190,7 +96,7 @@ export async function evaluate({ api, row, now = Date.now(), live = false }) {
   }
   // The review protocol requires AGENTS.md at the target PR base. The
   // deterministic processor verifies it can read this context; it does not
-  // claim to have performed a ChatGPT-level code review.
+  // claim to have performed a model-level code review.
   if (pr?.base?.sha && SHA.test(pr.base.sha)) {
     try {
       const agents = await api.request('GET', prefix + '/contents/AGENTS.md?ref=' + pr.base.sha);
@@ -241,69 +147,4 @@ function wordContent(file) {
   return file && file.encoding === 'base64' &&
     typeof file.content === 'string' &&
     Buffer.from(file.content, 'base64').toString('utf8').trim().length > 0;
-}
-
-// Side-effects only touch the queue API; no PR mutation endpoints exist here.
-export async function runDryProcess({ queue, github, id, clock = () => Date.now(), verify = evaluate }) {
-  if (!isUuid(id) || !queue || !github) throw new Error('Missing queue ID or read-only clients');
-  const current = await queue.get(id);
-  if (!current) return { outcome: 'missing' };
-  if (terminal(current.status)) return { outcome: 'duplicate_terminal', status: current.status };
-  if (current.status === 'processing' && Date.parse(current.lease_until) > clock())
-    return { outcome: 'already_processing' };
-  const claimed = await queue.claim(id);
-  if (!claimed) return { outcome: 'not_claimed', reason: 'other worker or attempts exhausted' };
-  if (claimed.id !== id || claimed.test_only !== true || claimed.status !== 'processing' ||
-      !isUuid(claimed.claim_token) || Date.parse(claimed.lease_until) <= clock()) {
-    throw new Error('Invalid or expired database claim; will not finalize');
-  }
-
-  let decision;
-  try {
-    decision = await verify({ api: github, row: claimed, now: clock() });
-    if (!decision || !['dry_run', 'stale', 'withheld', 'failed'].includes(decision.status) ||
-        !SAFE_REASON.test(decision.reason ?? ''))
-      throw new Error('Guard evaluator returned an unexpected result');
-  } catch (error) {
-    // A transient GitHub failure is NOT a negative review. Retry only after
-    // the current claim has been safely released, within the database cap.
-    await queue.finish(id, claimed.claim_token, reason('retryable', 'transient_validation_error'));
-    throw error;
-  }
-  await queue.finish(id, claimed.claim_token, decision);
-  return { outcome: 'evaluated', ...decision };
-}
-
-export function assertRuntimeEnvironment(env) {
-  if (!isUuid(env.QUEUE_ID)) throw new Error('QUEUE_ID must be one UUID');
-  if (!env.GH_TOKEN) throw new Error('GH_TOKEN missing; no claim attempted');
-  if (!env.REVIEW_BRIDGE_QUEUE_TOKEN || env.REVIEW_BRIDGE_QUEUE_TOKEN.length < 32)
-    throw new Error('Queue token missing or too short; no claim attempted');
-  if (env.GITHUB_REPOSITORY !== CONTROL || env.GITHUB_REF !== 'refs/heads/master')
-    throw new Error('Bridge must run on the control default branch');
-}
-
-async function main() {
-  assertRuntimeEnvironment(process.env);
-  const id = process.env.QUEUE_ID;
-  const queue = new QueueApi(process.env.REVIEW_BRIDGE_QUEUE_TOKEN);
-  const github = new GitHub(process.env.GH_TOKEN);
-  const outcome = await runDryProcess({ queue, github, id });
-  console.info('Bridge Step 3:', outcome.outcome, outcome.status ?? '', outcome.reason ?? '', id);
-  if (process.env.GITHUB_STEP_SUMMARY) {
-    appendFileSync(process.env.GITHUB_STEP_SUMMARY,
-      '# Review bridge: mandatory dry run\n\n' +
-      '- Queue: ' + id + '\n' +
-      '- Outcome: ' + outcome.outcome + '\n' +
-      '- Validation: ' + (outcome.status ?? 'not evaluated') + '\n' +
-      '- Reason: ' + (outcome.reason ?? 'none') + '\n' +
-      '- No GitHub review, merge or worker dispatch attempted.\n');
-  }
-}
-
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().catch(error => {
-    console.error('Review bridge stopped:', error instanceof Error ? error.message : 'unknown error');
-    process.exitCode = 1;
-  });
 }

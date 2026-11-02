@@ -29,10 +29,10 @@ invokes `opencode github run` without an auto-approval input.
 | 1-5: control model, ownership, template, validation, selection | Implemented; 42 existing tests pass | Added validated JSON catalog for orchestration; retained .NET as planning authority |
 | 6: cross-repository App authentication | App-token test workflow exists | Verified live during RM-003 after granting/approving the required App installation permissions |
 | 7-10: OpenCode pilot, worker, PR metadata, concurrency | Implemented | RM-001 proved the manual worker; RM-003 proved claimed worker execution, PR metadata, CI and verification |
-| 11: dispatcher | Implemented | Durable claim before dispatch; enrolled projects; `ready` is the sole task authorization status; triggered by the ChatGPT heartbeat push and always applies |
+| 11: dispatcher | Implemented | Durable claim before dispatch; enrolled projects; `ready` is the sole task authorization status; started every 10 minutes by the owner's external scheduler and always applies |
 | 12: reconciliation | Absent | Run correlation by task plus attempt UUID; PR/run/merge observations; status-only task edits; separate execution JSON; atomic state commit |
 | 13: review protocol | Implemented | reviewer/CHATGPT_REVIEW.md now defines exact-head review plus guarded merge |
-| 14: normal ChatGPT scheduled reviewer | Configured | Hourly ChatGPT automation re-reads the protocol and can submit trusted reviews with GitHub write access |
+| 14: normal automated reviewer | Implemented | Event-driven OpenCode reviewer in GitHub Actions (replaced the hourly ChatGPT scheduled reviewers on 2026-11-02); model-free jobs post trusted reviews |
 | 15: review feedback | Trusted `/oc` comments existed | Replaced unrestricted comment execution with deterministic workflow dispatch tied to a trusted review ID and current head SHA |
 | 16: runaway protection | Implemented | Three correction rounds, five implementation attempts, eight project starts/day, timeouts, duplicate-claim/run detection; no automatic resend of uncertain dispatches |
 | 17: failure handling | Workflow failure only | Recorded run URL/conclusion, missing PR, closed PR, merge conflict, missing dispatch and timeout reasons; transient HTTP reads retry. Observed failed/cancelled/timed-out implementation runs now support an explicit bounded operator retry that preserves attempt history |
@@ -42,11 +42,11 @@ invokes `opencode github run` without an auto-approval input.
 | 21: operator status | Absent | Markdown status, Actions summary and review queue artifact |
 | 22: cost limits | Absent | Attempt timestamps, run IDs, outcomes, correction counts and daily start budget; no claim of exact token/Go quota accounting |
 | 23: pause controls | Implemented | Global execution switch plus project enrollment/project enabled flag; a Human may de-authorize unclaimed work by changing `ready` back to `draft`; worker rechecks current controls after queueing |
-| 24: automatic merging | Configured | ChatGPT may merge only a trusted-approved exact head after fresh CI/mapping/mergeability checks using expected_head_sha; reconciler still owns done |
+| 24: automatic merging | Implemented | Model-free Actions code may merge only a trusted-approved exact head after fresh CI/mapping/mergeability checks using expected_head_sha; reconciler still owns done |
 
 ## Changes to the proposed design
 
-- A review approval is not task completion. ChatGPT may perform a guarded merge
+- A review approval is not task completion. Model-free reviewer workflow code may perform a guarded merge
   after approval, but only an observed merge produces `done`, merge SHA and
   completion timestamp through the reconciler.
 - Keep execution records in `automation/state.json`; mutate only the task's

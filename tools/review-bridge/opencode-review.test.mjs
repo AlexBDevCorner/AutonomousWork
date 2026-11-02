@@ -136,5 +136,6 @@ test('bridge accepts OpenCode rows and still rejects unknown sources', () => {
     status: 'queued', repository: input.repository, project_id: input.projectId, task_id: input.taskId, pr_number: 105,
     reviewed_sha: sha, verdict: 'APPROVE', findings: [], ci: {}, review_summary: 's', observed_at: new Date().toISOString() };
   assert.equal(validateRecord(row, row.id, Date.now(), true), null);
-  assert.equal(validateRecord({ ...row, source: 'pr-author' }, row.id, Date.now(), true), 'unknown_queue_schema_or_source');
+  for (const source of ['pr-author', 'chatgpt-scheduled'])
+    assert.equal(validateRecord({ ...row, source }, row.id, Date.now(), true), 'unknown_queue_schema_or_source');
 });

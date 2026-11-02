@@ -69,9 +69,6 @@ silent downgrade: a variant the model doesn't advertise fails the run.
 4. `AUTONOMOUS_REVIEW_ENABLED=true`. Never paste credential values into commits,
    documentation or chat.
 
-The legacy Supabase queue bridge (`review-bridge.yml`) is no longer fed by any
-reviewer and is removed separately once no queue rows are pending.
-
 ## Recovery and observation
 
 - **Emergency stop:** set `AUTONOMOUS_REVIEW_ENABLED=false`, or a project's
