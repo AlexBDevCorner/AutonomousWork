@@ -1,6 +1,7 @@
 {
   "version": 1,
   "enabled": true,
+  "arbitrationEnabled": true,
   "controlRepository": "AlexBDevCorner/AutonomousWork",
   "controlBranch": "master",
   "projects": {
