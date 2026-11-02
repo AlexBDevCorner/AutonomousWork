@@ -1,6 +1,6 @@
 // Event-driven OpenCode reviewer (#37). The model only reads files and prints a
 // verdict; this module decides eligibility and validates the verdict deterministically.
-// Commands: prepare | merge-check | check-model <models.txt> | parse <opencode.log> | enqueue <verdict.json>
+// Commands: prepare | merge-check | check-model <models.txt> <model> <variant> | parse <opencode.log> | enqueue <verdict.json>
 import { randomUUID } from 'node:crypto';
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -146,11 +146,13 @@ function output(env, values) {
   if (env.GITHUB_OUTPUT) appendFileSync(env.GITHUB_OUTPUT, Object.entries(values).map(([k, v]) => k + '=' + v + '\n').join(''));
 }
 
-async function main([command, file]) {
+async function main([command, file, ...rest]) {
   const env = process.env;
   if (command === 'check-model') {
-    checkModel(readFileSync(file, 'utf8'), env.REVIEWER_MODEL, env.REVIEWER_VARIANT);
-    console.info('Reviewer model confirmed:', env.REVIEWER_MODEL, env.REVIEWER_VARIANT);
+    // Shared by the reviewer and the arbiter, which use independently configured models.
+    const [model, variant] = rest;
+    checkModel(readFileSync(file, 'utf8'), model, variant);
+    console.info('Model confirmed:', model, variant);
     return;
   }
   if (command === 'parse') {
@@ -202,7 +204,7 @@ async function main([command, file]) {
       '\n- Queue: ' + (id ?? 'duplicate') + '\n\n' + row.review_summary + '\n');
     return;
   }
-  throw new Error('Usage: opencode-review.mjs prepare | merge-check | check-model <file> | parse <file> | enqueue <file>');
+  throw new Error('Usage: opencode-review.mjs prepare | merge-check | check-model <file> <model> <variant> | parse <file> | enqueue <file>');
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
