@@ -1,6 +1,6 @@
 // Pure Step 3 guard checks. Queue data is input, not authorization.
 // No functions in this module mutate GitHub or dispatch a worker.
-import { validateConfig } from '../autonomy/policy.mjs';
+import { decidedArbitration, validateConfig } from '../autonomy/policy.mjs';
 
 const SHA = /^[a-f0-9]{40}$/;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
@@ -186,8 +186,12 @@ export function validateGitHub({ row, config, planning, pr, openPrs, checks, rev
       return result('withheld', 'merge_requires_latest_same_head_trusted_approval', evidence);
     return result('dry_run', 'merge_guards_passed_no_mutation', evidence);
   }
-  // Raw REST commit_id is mandatory; old-head and COMMENTED reviews don't count.
-  if (review) return result('withheld', 'trusted_same_head_verdict_exists', evidence);
+  // Raw REST commit_id is mandatory; old-head and COMMENTED reviews don't count. The only exception is a
+  // CHANGES_REQUESTED whose disputed finding a binding arbitration (control ledger) overturned on this
+  // exact head: it may receive one fresh independent review, never an approval by itself.
+  const overturned = review?.state === 'CHANGES_REQUESTED' &&
+    decidedArbitration(planning.execution, review.id, row.reviewed_sha, 'rereview');
+  if (review && !overturned) return result('withheld', 'trusted_same_head_verdict_exists', evidence);
   if (row.verdict === 'APPROVE') {
     if (row.findings.some(f => f && ['P0','P1'].includes(f.severity)))
       return result('withheld', 'blocking_findings_forbid_approval', evidence);

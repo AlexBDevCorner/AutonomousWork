@@ -28,7 +28,8 @@ export function disputeFingerprint({ repository, pr, headSha, reviewId, disagree
 export function arbitrationRequest(execution, snapshot, config, now = Date.now()) {
   if (execution.status !== 'blocked' || execution.blockReason !== 'autonomous_review_disagreement') return null;
   const attempt = execution.attempts.at(-1), target = config.projects[execution.projectId];
-  if (!target || attempt?.kind !== 'correction' || attempt.conclusion !== 'success' ||
+  // Disputing an arbitration-directed correction is never re-arbitrated; the human decides.
+  if (!target || attempt?.kind !== 'correction' || attempt.conclusion !== 'success' || attempt.reason === 'arbitration_resolution' ||
       !attempt.reviewId || !/^[a-f0-9]{40}$/.test(attempt.headSha ?? '')) return null;
   const prs = snapshot.prs.filter(p => p.head.ref === `autonomous/${execution.taskId}` &&
     p.head.repo?.full_name === execution.repository);
@@ -106,8 +107,56 @@ export function applyVerdict(request, verdict) {
 }
 
 // Append-only ledger entry; earlier attempts, reasons and dispute URLs are never rewritten.
-export function arbitrationRecord(request, outcome, now) {
+export function arbitrationRecord(request, outcome, now, decision = null) {
   return { fingerprint: request.fingerprint, reviewId: request.reviewId, headSha: request.headSha,
     disagreementUrl: request.disagreementUrl, status: outcome.status, action: outcome.action,
-    decision: outcome.decision ?? null, reason: outcome.reason ?? null, decidedAt: new Date(now).toISOString() };
+    decision: outcome.decision ?? null, reason: outcome.reason ?? null, decidedAt: new Date(now).toISOString(),
+    ...(decision ? { decisionUrl: decision.url, decisionCommentId: decision.id } : {}),
+    ...(outcome.correction ? { correction: outcome.correction } : {}) };
+}
+
+export const ARBITRATION_WORKFLOW = 'autonomous-arbitration.yml';
+// API-owned identity of the worker GitHub App; only trusted deterministic jobs mint its tokens.
+export const APP_BOT = { login: 'autonomousworkdispatcher[bot]', id: 327051536 };
+const MARKER = '<!-- autonomous-arbitration:v1 -->';
+
+// Posted on the PR by the model-free decide job: human-readable and machine-verifiable.
+export function decisionComment(request, verdict, runId, outcome) {
+  return [MARKER, `Review-ID: ${request.reviewId}`, `Reviewed-SHA: ${request.headSha}`,
+    `Fingerprint: ${request.fingerprint}`, `Run-ID: ${runId}`, `Decision: ${verdict.decision}`,
+    `Outcome: ${outcome.status}/${outcome.action}${outcome.reason ? ' (' + outcome.reason + ')' : ''}`, '',
+    '## Independent arbitration of the disputed review finding', '',
+    'This resolves only the disputed finding(s) of review ' + request.reviewId + '. It is not an approval and ' +
+    'does not waive CI, other review findings or task requirements.', '',
+    verdict.rationale, '', '```json', JSON.stringify(verdict, null, 2), '```'].join('\n');
+}
+
+// The latest App-authored decision for exactly this dispute, produced by a successful
+// master arbitration run, whose verdict still validates and binds. Anything else is ignored.
+export function arbitrationDecision(pr, comments, request, runs) {
+  const lines = c => c.body.split(/\r?\n/);
+  const candidates = comments.filter(c => c.user?.login === APP_BOT.login && c.user.id === APP_BOT.id &&
+    c.user.type === 'Bot' && typeof c.body === 'string' && Number.isSafeInteger(c.id) &&
+    c.html_url === `https://github.com/${request.repository}/pull/${pr.number}#issuecomment-${c.id}` &&
+    lines(c)[0] === MARKER && lines(c)[1] === `Review-ID: ${request.reviewId}` &&
+    lines(c)[2] === `Reviewed-SHA: ${request.headSha}` && lines(c)[3] === `Fingerprint: ${request.fingerprint}`)
+    .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at) || a.id - b.id);
+  const comment = candidates.at(-1);
+  if (!comment) return null;
+  const runId = Number(/^Run-ID: ([1-9][0-9]*)$/.exec(lines(comment)[4] ?? '')?.[1]);
+  const run = runs.find(r => r.id === runId);
+  if (!run || run.display_title !== arbitrationTitle(request.taskId, request.reviewId, request.headSha) ||
+      run.path !== `.github/workflows/${ARBITRATION_WORKFLOW}` || run.head_branch !== 'master' ||
+      run.event !== 'workflow_dispatch' || run.status !== 'completed' || run.conclusion !== 'success') return null;
+  try {
+    const verdict = decisionVerdict(comment.body);
+    const outcome = applyVerdict(request, verdict);
+    return outcome.status === 'stale' ? null : { url: comment.html_url, id: comment.id, verdict, outcome };
+  } catch { return null; }
+}
+
+// The verdict JSON embedded in a decision comment (the last fenced json block).
+export function decisionVerdict(body) {
+  const json = [...String(body).matchAll(/```json\r?\n([\s\S]*?)\r?\n```/g)].at(-1)?.[1];
+  return validateVerdict(JSON.parse(json));
 }

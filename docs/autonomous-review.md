@@ -148,3 +148,69 @@ audited, tightly scoped database update, then manually run the existing
 rewrite the finding or `observed_at`; the unique live-verdict index protects
 against duplicate decisions. If the observation has expired, get a fresh
 independent review instead of changing its timestamp.
+
+## Independent arbitration of review disputes (#35)
+
+When a correction worker leaves the reviewed head unchanged and records an
+authenticated disagreement, the execution is blocked with
+`autonomous_review_disagreement`. Arbitration settles that specific dispute
+without a human, within hard limits. The manual operator resolution
+(`resume_correction_task`) remains the fallback for every case.
+
+**Gates.** Binding arbitration runs only when `automation/config.json` has
+`"arbitrationEnabled": true` (absent means off) and global automation is enabled.
+Keep it off until the pilot below passes. Arbiter model settings: Actions variables
+`ARBITER_MODEL` (default `opencode-go/kimi-k3.1-pro`) and `ARBITER_VARIANT` (default
+`max`). They are independent from the coding worker and reviewer. The run fails if
+the model doesn't advertise the variant; there is no silent downgrade.
+
+**Flow.**
+1. A dispute is arbitrable only under the same exact-head guards as operator
+   recovery: unchanged reviewed head, green required CI, the disputed review still
+   the latest trusted verdict, and an authenticated worker disagreement for exactly
+   that review and head. It is fingerprinted by repository/PR/SHA/review/disagreement.
+2. The dispatcher starts `Autonomous review arbitration`
+   (`arbitrate <TASK> <REVIEW-ID> <SHA>`) at most twice per dispute (one retry for a
+   failed run). After that it records an `arbitration_runs_exhausted` escalation.
+3. The arbiter job re-verifies the live dispute, assembles evidence (disputed
+   review, disagreement, task and project specs, base `AGENTS.md`, diff,
+   discussion) and runs OpenCode with read-only tools (`reviewer/ARBITER.md`). It
+   has no GitHub write token.
+4. A model-free job re-validates the typed, dispute-bound verdict and publishes one
+   `<!-- autonomous-arbitration:v1 -->` PR comment as the worker App.
+5. The dispatcher accepts only an App-authored decision whose arbitration run
+   succeeded on master. It appends an immutable record to the execution's
+   `arbitrations` ledger and acts:
+   - `UPHOLD_REVIEWER` / `COMPROMISE_FIX` with high confidence → one bounded
+     correction (`reason: arbitration_resolution`) pinned to the decision comment.
+     The worker re-verifies the comment and receives it in `blocking-review.json` as
+     `arbitration`. If that worker disputes again, it is not re-arbitrated; a human
+     decides.
+   - `UPHOLD_WORKER` with high confidence and `high_impact_risk: none` → back to
+     `review`. The reviewer performs one fresh independent review of the same SHA
+     (`review <TASK> <SHA> after <REVIEW-ID>`). The bridge accepts it only because the
+     ledger records that exact overturn. The override is never an approval: merging
+     still requires a new trusted APPROVED review, green CI and every merge guard.
+   - `ESCALATE_HUMAN`, any confidence below `high`, or an overturn where security,
+     data loss, save corruption or integrity is at stake → stays blocked for the
+     human. The decision comment explains why.
+
+**Pilot (advisory, owner-run).** With `arbitrationEnabled` still off, dispatch
+`Autonomous review arbitration` manually on `master`. Get the exact inputs with:
+
+```sh
+TASK_ID=MSS-101 GITHUB_TOKEN_READ=$(gh auth token) node tools/autonomy/arbiter.mjs request
+```
+
+The run records the verdict (artifact `arbitration-verdict`, plus latency and the
+policy outcome in the job summary) and publishes nothing. A successful advisory run
+counts as that dispute's arbitration run, so the dispute stays with the human after
+the pilot. Historical disputes (MSS-100) no longer pass the live guards and must be
+evaluated from their recorded evidence.
+
+**Activation.** After the pilot, set `"arbitrationEnabled": true` in a reviewed
+control change. Disable it the same way.
+
+Deployment: apply `20261102130000_review_bridge_arbitration_rereview.sql` and redeploy
+`review-bridge-queue`. A same-SHA re-review supersedes the overturned review in the
+queue's one-verdict-per-head key.

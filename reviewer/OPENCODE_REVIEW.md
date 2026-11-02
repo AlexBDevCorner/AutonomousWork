@@ -20,6 +20,12 @@ approve, merge, push, comment or change anything, and you must not try.
   `review-comments.json` — PR metadata and earlier review discussion, including
   any developer disagreement with a previous finding.
 
+- `.autonomous-review/arbitration.json` — present only for a same-head re-review:
+  an independent arbiter overturned a specific finding of an earlier review of this
+  exact commit. Do not re-raise that finding unless you find concrete new evidence
+  the arbiter did not consider. Review everything else independently; this is not
+  a reason to approve.
+
 Required CI has already completed successfully for this exact head. You cannot run
 commands; read code instead.
 
