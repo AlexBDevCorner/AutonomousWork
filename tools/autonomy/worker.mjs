@@ -2,6 +2,7 @@ import { appendFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { GitHub } from './github.mjs';
 import { load } from './run.mjs';
+import { APP_BOT, decisionVerdict } from './arbitration.mjs';
 import { autonomousPr, latestAttempt, latestReview, requiredCiState, reviewDisagreement, reviewResolution, runTitle, budgetCounts } from './policy.mjs';
 
 export function authorize({ catalog, state, config, taskId, taskPath, repository, attemptId, mode, reviewId, expectedHead }) {
@@ -49,6 +50,19 @@ export async function assertReviewResolutionUnchanged(api, pr, pin, repository, 
   if (JSON.stringify(resolution) !== JSON.stringify(pin))
     throw new Error('Operator resolution changed or is no longer trusted; refusing the stale correction claim.');
   return resolution;
+}
+
+// The arbitration decision comment must still be the App's unedited decision for this dispute.
+export async function assertArbitrationUnchanged(api, pin, repository) {
+  const comment = await api.request('GET', `/repos/${repository}/issues/comments/${pin.decisionCommentId}`);
+  let verdict = null;
+  try { verdict = decisionVerdict(comment.body); } catch { /* handled below */ }
+  if (comment?.user?.login !== APP_BOT.login || comment.user.id !== APP_BOT.id || comment.html_url !== pin.decisionUrl ||
+      comment.body.split(/\r?\n/)[3] !== `Fingerprint: ${pin.fingerprint}` || !verdict ||
+      verdict.decision !== pin.decision || verdict.correction !== pin.correction)
+    throw new Error('Arbitration decision changed or is no longer trusted; refusing the stale correction claim.');
+  return { ...pin, verdict, scope: 'This binding arbitration resolves only the disputed finding(s) of the blocking review. ' +
+    'Implement the bounded correction; task requirements and every other review finding still apply.' };
 }
 
 async function main() {
@@ -103,7 +117,9 @@ async function main() {
         operatorResolution = await assertReviewResolutionUnchanged(api, pr, selected.attempt.operatorResolution,
           input.repository, config.reviewers);
       }
-      writeFileSync(resolve(process.env.RUNNER_TEMP, 'blocking-review.json'), JSON.stringify({ review, comments, operatorResolution }, null, 2));
+      const arbitration = selected.attempt?.arbitration
+        ? await assertArbitrationUnchanged(api, selected.attempt.arbitration, input.repository) : undefined;
+      writeFileSync(resolve(process.env.RUNNER_TEMP, 'blocking-review.json'), JSON.stringify({ review, comments, operatorResolution, arbitration }, null, 2));
     }
     if (input.mode === 'implementation' && input.expectedHead) {
       const pr = own[0];

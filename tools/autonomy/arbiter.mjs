@@ -1,10 +1,11 @@
 // Read-only evidence assembly and verdict parsing for the arbitration workflow (#35).
-// Commands: prepare | parse <opencode.log>. Neither performs any GitHub write.
+// Commands: prepare | parse <opencode.log> | decide <verdict.json>. Only the model-free
+// decide command writes, and only one PR comment through the worker App token.
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { GitHub } from './github.mjs';
-import { arbitrationRequest, applyVerdict, validateVerdict } from './arbitration.mjs';
+import { APP_BOT, arbitrationRequest, applyVerdict, decisionComment, validateVerdict } from './arbitration.mjs';
 
 const SHA = /^[a-f0-9]{40}$/;
 
@@ -99,7 +100,17 @@ async function main([command, file]) {
       '\n- Model: ' + env.ARBITER_MODEL + ' (' + env.ARBITER_VARIANT + ')\n\n' + verdict.rationale + '\n');
     return;
   }
-  if (command !== 'prepare') throw new Error('Usage: arbiter.mjs prepare | parse <file>');
+  if (command === 'request') {
+    // Read-only operator aid: print the live arbitration request (dispatch inputs) for TASK_ID.
+    const state = JSON.parse(readFileSync('automation/state.json', 'utf8'));
+    const config = JSON.parse(readFileSync('automation/config.json', 'utf8'));
+    const execution = state.executions.find(e => e.taskId === env.TASK_ID);
+    if (!execution) throw new Error('No execution for TASK_ID');
+    const snapshot = await disputeSnapshot(new GitHub(env.GITHUB_TOKEN_READ), execution);
+    console.log(JSON.stringify(arbitrationRequest(execution, snapshot, config), null, 2));
+    return;
+  }
+  if (!['prepare', 'decide'].includes(command)) throw new Error('Usage: arbiter.mjs request | prepare | parse <file> | decide <file>');
   const input = disputeInput(env);
   if (!env.GITHUB_TOKEN_READ) throw new Error('Read-only GitHub token missing');
   const api = new GitHub(env.GITHUB_TOKEN_READ);
@@ -109,8 +120,28 @@ async function main([command, file]) {
   if (!execution) throw new Error('Dispute does not match the recorded execution');
   const snapshot = await disputeSnapshot(api, execution);
   const request = verifyDispute({ input, config, state, snapshot });
-  const base = await collectEvidence({ api, request, snapshot, dir: env.EVIDENCE_DIR });
-  appendFileSync(env.GITHUB_OUTPUT, 'base_sha=' + base + '\n');
+  if (command === 'prepare') {
+    const base = await collectEvidence({ api, request, snapshot, dir: env.EVIDENCE_DIR });
+    appendFileSync(env.GITHUB_OUTPUT, 'base_sha=' + base + '\n');
+    return;
+  }
+  // decide: model-free. Re-validate against the still-live dispute, then publish exactly one decision.
+  if (config.arbitrationEnabled !== true) {
+    console.info('Binding arbitration is disabled in control configuration; verdict stays advisory.');
+    return;
+  }
+  const verdict = validateVerdict(JSON.parse(readFileSync(file, 'utf8')));
+  const outcome = applyVerdict(request, verdict);
+  if (outcome.status === 'stale') throw new Error('Arbiter verdict is not bound to this dispute');
+  const comments = snapshot.comments[request.pr];
+  if (comments.some(c => c.user?.id === APP_BOT.id && c.body?.includes('Fingerprint: ' + request.fingerprint))) {
+    console.info('A decision for this dispute is already published; not duplicating it.');
+    return;
+  }
+  const writer = new GitHub(env.GITHUB_TOKEN_WRITE);
+  const posted = await writer.request('POST', '/repos/' + request.repository + '/issues/' + request.pr + '/comments',
+    { body: decisionComment(request, verdict, Number(env.GITHUB_RUN_ID), outcome) });
+  console.info('Published arbitration decision', verdict.decision, posted?.html_url);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)

@@ -281,3 +281,26 @@ test('required runtime credentials and trusted master context are checked before
   assert.throws(() => assertRuntimeEnvironment({ ...env, REVIEW_BRIDGE_QUEUE_TOKEN: '' }), /Queue token missing/);
   assert.throws(() => assertRuntimeEnvironment({ ...env, GITHUB_REF: 'refs/heads/untrusted' }), /default branch/);
 });
+
+test('an arbitration-overturned same-head CHANGES_REQUESTED allows exactly one fresh review', () => {
+  const changes = review({ id: 7, state: 'CHANGES_REQUESTED' });
+  const withLedger = arbitrations => {
+    const s = state(); s.executions[0].arbitrations = arbitrations;
+    return observed({ reviews: [changes], planning: preflight({ state: s }) });
+  };
+  const record = { status: 'decided', action: 'rereview', reviewId: 7, headSha: HEAD };
+  assert.equal(validateGitHub(withLedger([record])).reason, 'review_guards_passed_no_mutation');
+  // Any mismatch keeps the trusted CHANGES_REQUESTED binding.
+  for (const other of [{ ...record, reviewId: 8 }, { ...record, headSha: 'c'.repeat(40) },
+    { ...record, action: 'correction' }, { ...record, status: 'escalated' }])
+    assert.equal(validateGitHub(withLedger([other])).reason, 'trusted_same_head_verdict_exists');
+  assert.equal(validateGitHub(withLedger(undefined)).reason, 'trusted_same_head_verdict_exists');
+  // The override never turns the old verdict into a merge authorization.
+  assert.equal(validateGitHub({ ...withLedger([record]), row: { ...row(), verdict: 'MERGE_CHECK' } }).reason,
+    'merge_requires_latest_same_head_trusted_approval');
+  // Once the fresh review lands it is the latest trusted verdict; no third review is possible.
+  const fresh = review({ id: 9, submitted_at: '2026-09-25T17:40:00Z' });
+  const s = state(); s.executions[0].arbitrations = [record];
+  assert.equal(validateGitHub(observed({ reviews: [changes, fresh], planning: preflight({ state: s }) })).reason,
+    'trusted_same_head_verdict_exists');
+});

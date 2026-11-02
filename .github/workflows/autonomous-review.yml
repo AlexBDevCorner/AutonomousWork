@@ -1,7 +1,7 @@
 name: Autonomous OpenCode reviewer
 # Dispatched by the deterministic dispatcher for one eligible exact PR head.
 # The unique run name is how the dispatcher deduplicates and bounds retries.
-run-name: ${{ inputs.mode == 'merge_check' && 'merge-check' || 'review' }} ${{ inputs.task_id }} ${{ inputs.head_sha }}
+run-name: ${{ inputs.mode == 'merge_check' && 'merge-check' || 'review' }} ${{ inputs.task_id }} ${{ inputs.head_sha }}${{ inputs.supersedes_review_id && format(' after {0}', inputs.supersedes_review_id) || '' }}
 
 on:
   workflow_dispatch:
@@ -32,6 +32,11 @@ on:
         description: "Exact PR head SHA with green required CI"
         required: true
         type: string
+      supersedes_review_id:
+        description: "Overturned review ID for a same-SHA re-review after binding arbitration"
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -46,6 +51,7 @@ env:
   REPOSITORY: ${{ inputs.repository }}
   PR: ${{ inputs.pr }}
   HEAD_SHA: ${{ inputs.head_sha }}
+  SUPERSEDES_REVIEW_ID: ${{ inputs.supersedes_review_id }}
   # Reviewer model is independent from the coding worker and the #35 arbiter.
   REVIEWER_MODEL: ${{ vars.REVIEWER_MODEL || 'opencode-go/gemini-4-argon' }}
   REVIEWER_VARIANT: ${{ vars.REVIEWER_VARIANT || 'high' }}
