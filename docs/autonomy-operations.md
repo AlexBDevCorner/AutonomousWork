@@ -243,21 +243,22 @@ The RepoManager worker uses `opencode-go/muse-spark-1.3-contributor` with
 `83abc64a5c4e0e0a5157f2c4435d34131009a404`; update that pin deliberately
 after reviewing upstream changes rather than following `@latest`.
 
-Scheduled dispatcher/reconciliation currently uses an hourly ChatGPT heartbeat plus a path-scoped GitHub push trigger; the native GitHub `schedule` trigger is temporarily disabled. A normal
-ChatGPT scheduled task runs hourly and follows `reviewer/CHATGPT_REVIEW.md` to
-review eligible autonomous PR heads and guarded-merge trusted approved heads.
+Scheduled dispatcher/reconciliation currently uses an hourly ChatGPT heartbeat plus a path-scoped GitHub push trigger; the native GitHub `schedule` trigger is temporarily disabled. Each dispatcher
+run also dispatches the event-driven OpenCode reviewer for eligible autonomous PR
+heads, and a model-free merge check for trusted approved heads (see
+[autonomous review](autonomous-review.md)).
 The merge uses GitHub's exact `expected_head_sha` guard; the reconciler remains
 the only component that marks a task `done` after observing the merge.
 
-## Scheduled ChatGPT reviewer and merger
+## Reviewer and merger
 
-The hourly ChatGPT automation is intentionally separate from GitHub Actions. On
-each run it re-reads `reviewer/CHATGPT_REVIEW.md` from master and treats that
-file as the authoritative protocol. It may submit APPROVE or REQUEST_CHANGES and
-may merge only an already trusted-approved exact head after re-validating all
-current mapping, CI, review, mergeability, and SHA guards.
+The ChatGPT scheduled reviewers are retired. The OpenCode reviewer only proposes
+a verdict; the master-only review bridge re-reads `reviewer/CHATGPT_REVIEW.md` as
+the authoritative protocol, submits APPROVE or REQUEST_CHANGES, and merges only an
+already trusted-approved exact head after re-validating all current mapping, CI,
+review, mergeability, and SHA guards.
 
 A successful approval is not sufficient by itself: the merge operation must use
 `expected_head_sha` equal to the reviewed head. If anything changes between
 review and merge, the merge fails closed and a later run re-evaluates the new
-state. ChatGPT never edits planning state or marks a task complete.
+state. The reviewer never edits planning state or marks a task complete.

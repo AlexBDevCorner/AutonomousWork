@@ -1,6 +1,8 @@
 # Review and merge protocol
 
-Review autonomous PRs only at their exact current head commit. ChatGPT owns the independent code-review assessment and writes the verdict to the
+Review autonomous PRs only at their exact current head commit. The event-driven
+OpenCode reviewer (`reviewer/OPENCODE_REVIEW.md`) owns the independent code-review
+assessment; trusted Actions code writes its validated verdict to the
 Supabase review queue. The trusted default-branch GitHub Actions workflow submits
 actual commit-bound GitHub reviews and performs independently guarded merges.
 Deterministic code owns dispatch, retry/correction counters, and task status.
@@ -120,26 +122,32 @@ limit is reached, or the developer explicitly records a machine-readable
 technical disagreement for human resolution. Only the reconciler marks a task
 `done` after GitHub reports the PR merged.
 
-## Scheduled reviewer instruction
+## Event-driven reviewer
 
-Run one scheduled ChatGPT reviewer hourly across all projects with
-`projects[projectId].reviewEnabled: true`. Do not submit GitHub review or
-merge mutations directly. Fetch this live protocol and relevant config/state,
-project file, task spec and target AGENTS.md. Independently review at most one
-eligible PR at its exact current head and verify exact-head CI and raw reviews.
-If a genuine new decision is actionable, check Supabase for an existing
-queued or completed verdict for the same repository/PR/SHA. Then insert
-exactly one `public.autonomous_review_queue` row with
-`schema_version=1`, `source=chatgpt-scheduled`, the exact enrolled
-repository/project/task/PR/head mapping, `reviewed_sha`, truthful
-`review_summary`, `findings`, `ci`, `observed_at`, `test_only=false`
-and `status=queued`. Never fabricate P0/P1 findings or issue an approval
-based solely on green CI. For an existing trusted exact-head APPROVED review,
-enqueue MERGE_CHECK instead of another review. For any already completed
-CHANGES_REQUESTED on the exact head, skip until the worker advances it.
-On an integration failure, report it and leave the schedule enabled.
-The Actions workflow independently fetches the row using the scoped queue
-token, verifies all guards, submits review under the separate trusted identity,
-then merges with the expected SHA using the distinct GitHub App token when
-eligible. The dispatcher handles correction rounds, and the reconciler
-marks work done only after confirming the actual merge.
+ChatGPT Scheduled Task reviewers are retired and must not be re-enabled. Each
+deterministic dispatcher tick finds, across projects with
+`projects[projectId].reviewEnabled: true`, executions in `review` whose PR is
+non-draft with green required CI at its exact head, and dispatches the
+`Autonomous OpenCode reviewer` workflow (run name `review <TASK-ID> <SHA>`,
+at most three runs per exact head; failed runs are retried on later ticks).
+No model runs on idle ticks.
+
+The workflow first re-runs the bridge guards for that exact head (no model).
+Only when eligible does one read-only OpenCode run review the PR checkout as
+data, with read/grep/glob/list tools only, PR-supplied OpenCode configuration
+and agent instructions removed, and no GitHub write or queue credential. Its
+verdict must match the strict output contract in `reviewer/OPENCODE_REVIEW.md`.
+A separate model-free job re-validates the verdict against live state and
+inserts one `source=opencode-actions` queue row; the queue rejects a second
+review verdict for the same repository/PR/SHA. `WITHHOLD` records an
+escalation for a human and posts no GitHub review.
+
+For an exact head that already has a trusted APPROVED review but is still open,
+the dispatcher dispatches a model-free `merge-check <TASK-ID> <SHA>` run that
+enqueues MERGE_CHECK. For a completed CHANGES_REQUESTED on the exact head,
+nothing is enqueued until the worker advances it. The bridge independently
+fetches each row using the scoped queue token, verifies all guards, submits the
+review under the separate trusted identity, then merges with the expected SHA
+using the distinct GitHub App token when eligible. The dispatcher handles
+correction rounds, and the reconciler marks work done only after confirming the
+actual merge.

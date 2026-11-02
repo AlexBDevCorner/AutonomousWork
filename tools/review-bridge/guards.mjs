@@ -6,8 +6,10 @@ const SHA = /^[a-f0-9]{40}$/;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const VERDICTS = new Set(['APPROVE', 'REQUEST_CHANGES', 'WITHHOLD', 'MERGE_CHECK']);
 const TERMINAL = new Set(['applied', 'dry_run', 'stale', 'withheld', 'failed']);
+// Legacy ChatGPT rows remain processable; the event-driven OpenCode reviewer is the live source.
+export const SOURCES = new Set(['chatgpt-scheduled', 'opencode-actions']);
 export const OBSERVATION_MAX_AGE_MS = 3 * 60 * 60 * 1000;
-export const PROTOCOL_BLOB_SHA = 'f503c2fe085fafa666026923ff352b7140ea517e';
+export const PROTOCOL_BLOB_SHA = 'ebaf0abe5bcebe0f8f4faec6a17c20107fbd58b9';
 const result = (status, reason, evidence = {}) => ({ status, reason, evidence });
 const word = x => typeof x === 'string' && x.trim().length > 0;
 // Keep validation and the posted GitHub review on the same finding-text contract.
@@ -28,7 +30,7 @@ export const terminal = value => TERMINAL.has(value);
 
 export function validateRecord(row, id, now = Date.now(), live = false) {
   if (!row || row.id !== id || !isUuid(id)) return 'invalid_or_mismatched_queue_id';
-  if (row.schema_version !== 1 || row.source !== 'chatgpt-scheduled') return 'unknown_queue_schema_or_source';
+  if (row.schema_version !== 1 || !SOURCES.has(row.source)) return 'unknown_queue_schema_or_source';
   if (live) {
     if (row.test_only !== false || !/^AlexBDevCorner\/[A-Za-z0-9_.-]+$/.test(row.repository))
       return 'outside_live_review_scope';

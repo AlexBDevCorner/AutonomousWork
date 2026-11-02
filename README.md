@@ -153,7 +153,8 @@ Agents must never "helpfully" act outside their role, even if blocked.
   - Never selects future tasks; never starts unclaimed work; never edits
     task requirements, `priority`, or other tasks.
 
-- **ChatGPT** — reviews and guarded-merges autonomous PRs:
+- **Reviewer** — the event-driven OpenCode reviewer (`reviewer/OPENCODE_REVIEW.md`)
+  proposes verdicts; the trusted review bridge posts them and guarded-merges:
   - Reviews PRs against task acceptance criteria.
   - Requests changes or approves against the exact current head SHA.
   - After a trusted approval, may merge only when the reviewer protocol's
@@ -165,7 +166,7 @@ Agents must never "helpfully" act outside their role, even if blocked.
 - **Reconciler** — syncs execution state:
   - Updates execution metadata/status (`in_progress` → `review` →
     `done`, or → `blocked` with reason) based on observed Dispatcher /
-    OpenCode / ChatGPT outcomes.
+    OpenCode / Reviewer outcomes.
   - Never changes task content (no edits to goal, requirements,
     acceptance criteria, `priority`, `depends_on`, or `id`).
 
@@ -179,12 +180,12 @@ Authorization boundary:
   pinned control commit and the worker executes exactly that claimed task.
   By the time OpenCode runs, the status is therefore `in_progress`, not
   `ready` — that is the claim working as designed, not a bypass.
-- No agent (Dispatcher, OpenCode, ChatGPT, Reconciler) may promote `draft`
+- No agent (Dispatcher, OpenCode, Reviewer, Reconciler) may promote `draft`
   to `ready`, edit requirements to make a task "ready enough", or infer
   authorization from comments, PRs, or chat. Without the human `ready`
   first, nothing downstream may execute it. No exceptions.
 
-| Action | Human | Dispatcher | OpenCode | ChatGPT | Reconciler |
+| Action | Human | Dispatcher | OpenCode | Reviewer | Reconciler |
 | --- | :---: | :---: | :---: | :---: | :---: |
 | Create task | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Edit requirements / body | ✅ | ❌ | ❌ | ❌ | ❌ |
@@ -230,7 +231,7 @@ blocked project can never starve the others.
    [OpenCode] then implements exactly that one claimed task and
    creates/updates the PR in the target repository.
 6. [Reconciler] After a successful worker and observed PR, set `status: review`,
-   or `blocked` with a reason in the execution ledger. [ChatGPT] reviews the PR
+   or `blocked` with a reason in the execution ledger. [Reviewer] reviews the PR
    and may guarded-merge an approved exact head according to
    `reviewer/CHATGPT_REVIEW.md`. Approval alone does not complete the task:
    [Reconciler] sets `done` only after an observed merge, recording its SHA and

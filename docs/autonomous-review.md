@@ -1,7 +1,7 @@
 # Autonomous PR review and guarded merge
 
-This is the permanent Supabase-backed autonomous review workflow. ChatGPT performs
-the code assessment; GitHub Actions performs the actual reviews and merges after
+This is the permanent Supabase-backed autonomous review workflow. An event-driven
+OpenCode reviewer in GitHub Actions performs the code assessment; GitHub Actions performs the actual reviews and merges after
 independently checking current repository state. The existing dispatcher handles
 REQUEST_CHANGES and bounded corrections. The reconciler independently marks work
 done after GitHub confirms that the PR has merged.
@@ -14,13 +14,27 @@ Both must be true before the workflow can act. MtgSoloSports is enabled first;
 RepoManager and MandarinBotNet have reviewEnabled=false until deliberately
 enabled. The same production code and credentials will serve them later.
 
-A single hourly scheduled ChatGPT task named **Autonomous PR Reviewer**
-reads reviewer/CHATGPT_REVIEW.md from master before each run, checks project
-enrollment and records a genuine review for at most one eligible PR. An exact
-head that already has a trusted APPROVED review gets a MERGE_CHECK event.
-An exact head with a trusted CHANGES_REQUESTED review waits for the worker
-to correct it. ChatGPT writes accurate structured verdicts into Supabase,
-never makes up findings, and does not call GitHub's mutation API directly.
+The ChatGPT Scheduled Task reviewers are retired (owner decision, 2026-11-02) and
+must stay disabled. Each 10-minute dispatcher tick lists review-enabled executions
+in `review` whose non-draft PR has green required CI and no trusted exact-head
+review, and dispatches **Autonomous OpenCode reviewer**
+(`.github/workflows/autonomous-review.yml`, run name `review <TASK-ID> <SHA>`).
+Each exact head gets at most three runs; a failed run (provider error, Go quota,
+unparsable verdict) is retried on a later tick, then left visible as failed runs
+and `reviewRuns: 3` in the dispatcher's `review-queue.json` artifact. Idle ticks
+never call a model. An exact head that already has a trusted APPROVED review gets a
+model-free `merge-check <TASK-ID> <SHA>` run that enqueues MERGE_CHECK. An exact
+head with a trusted CHANGES_REQUESTED review waits for the worker to correct it.
+
+The review job re-runs the bridge guards before any model call, checks out the PR
+head as data only, strips PR-supplied OpenCode configuration/plugins and agent
+instructions, confirms the configured model advertises the configured variant, and
+runs OpenCode with read/grep/glob/list tools only. Instructions and the verdict
+contract are in `reviewer/OPENCODE_REVIEW.md`. A separate job without the model
+key re-validates the verdict against live state and inserts one
+`source=opencode-actions` queue row through the queue-scoped Edge API. Model
+settings: Actions variables `REVIEWER_MODEL` (default
+`opencode-go/gemini-4-argon`) and `REVIEWER_VARIANT` (default `high`).
 
 The INSERT-only Supabase trigger calls review-bridge-dispatch using the
 existing Vault webhook secret; only the queue UUID leaves Supabase.
@@ -70,8 +84,19 @@ permanent live process.
    Supabase database key outside the Edge Function.
 5. Set the Actions repository variable `AUTONOMOUS_REVIEW_ENABLED=true`
    only after the secret is installed and deployment succeeds.
-   Enable **only** the new Autonomous PR Reviewer scheduled task.
-   Keep earlier direct-GitHub reviewer tasks disabled to avoid conflicts.
+   Keep all ChatGPT reviewer Scheduled Tasks disabled.
+
+### OpenCode reviewer rollout (#37)
+
+1. Store a dedicated OpenCode Go API key as the AutonomousWork Actions secret
+   `OPENCODE_API_KEY` (the MtgSoloSports secret is not visible here).
+2. Apply `20261102120000_review_bridge_opencode_reviewer.sql` and redeploy both
+   Edge Functions (`review-bridge-queue` adds the `enqueue` action;
+   `review-bridge-dispatch` accepts the new source).
+3. Merge the code. The next dispatcher tick dispatches reviews for eligible heads.
+   Emergency stop is unchanged: `AUTONOMOUS_REVIEW_ENABLED=false` or per-project
+   `reviewEnabled: false`. A `WITHHOLD` verdict is an escalation: the PR waits for
+   manual review, which remains the fallback.
 
 This is the actual implementation: the first processed PR can be an
 ordinary MtgSoloSports task PR. No disposable fixtures or separate
@@ -102,7 +127,7 @@ individual projects by changing their reviewEnabled values in the control
 repo. Stopping new actions does not roll back an already accepted review
 or merge; the dispatcher and reconciler are separate processes.
 
-## Scheduled finding payload and terminal recovery
+## Finding payload and terminal recovery
 
 A real `REQUEST_CHANGES` verdict must have at least one actual P0/P1 finding.
 Use `{ "severity": "P1", "path": "...", "line": 42,
