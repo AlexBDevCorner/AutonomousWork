@@ -4547,7 +4547,7 @@
       "taskId": "MSS-101",
       "projectId": "mtgsolosports",
       "repository": "AlexBDevCorner/MtgSoloSports",
-      "status": "blocked",
+      "status": "review",
       "attempts": [
         {
           "id": "5f2a86a2-7dfa-4c34-a172-0979861b3c40",
@@ -4574,11 +4574,26 @@
           "completedAt": "2026-10-31T19:46:51Z"
         }
       ],
-      "blockReason": "autonomous_review_disagreement",
+      "blockReason": null,
       "pr": 105,
       "headSha": "e0bec6dbb97c2967c6606d69688254057c7a301d",
       "prUrl": "https://github.com/AlexBDevCorner/MtgSoloSports/pull/105",
-      "disagreementUrl": "https://github.com/AlexBDevCorner/MtgSoloSports/pull/105#issuecomment-6548282480"
+      "disagreementUrl": "https://github.com/AlexBDevCorner/MtgSoloSports/pull/105#issuecomment-6548282480",
+      "arbitrations": [
+        {
+          "fingerprint": "db8d206c0e29f99ec460b616143e009b423c979330c72f92771889ed0e548c7e",
+          "reviewId": 5724511143,
+          "headSha": "e0bec6dbb97c2967c6606d69688254057c7a301d",
+          "disagreementUrl": "https://github.com/AlexBDevCorner/MtgSoloSports/pull/105#issuecomment-6548282480",
+          "status": "decided",
+          "action": "rereview",
+          "decision": "UPHOLD_WORKER",
+          "reason": null,
+          "decidedAt": "2026-11-02T16:20:34.040Z",
+          "decisionUrl": "https://github.com/AlexBDevCorner/MtgSoloSports/pull/105#issuecomment-6582220559",
+          "decisionCommentId": 6582220559
+        }
+      ]
     }
   ]
 }
