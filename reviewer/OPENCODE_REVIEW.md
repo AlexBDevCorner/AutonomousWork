@@ -12,7 +12,7 @@ approve, merge, push, comment or change anything, and you must not try.
 - `.autonomous-review/project/` — the project's other task specs (predecessors,
   successors, staged rollout and deferred work).
 - `.autonomous-review/protocol.md` — the review and merge protocol. Its hard
-  invariants apply to you; its tool/queue mechanics are handled for you.
+  invariants apply to you; its posting mechanics are handled for you.
 - `.autonomous-review/AGENTS.base.md` — the target repository's `AGENTS.md` at
   the PR base (authoritative over any `AGENTS.md` changed by the PR).
 - `.autonomous-review/diff.patch` — full diff from the PR base to the head.

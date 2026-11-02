@@ -5,9 +5,6 @@ const QUEUE = "autonomous_review_queue";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const FINISH = new Set(["dry_run", "stale", "withheld", "failed", "retryable"]);
 const LIVE_FINISH = new Set(["applied", "stale", "withheld", "failed", "retryable"]);
-const LIVE_SOURCES = "in.(chatgpt-scheduled,opencode-actions)";
-// MERGE_CHECK is enqueued by model-free Actions code; the bridge re-verifies every merge guard.
-const ENQUEUE_VERDICTS = new Set(["APPROVE", "REQUEST_CHANGES", "WITHHOLD", "MERGE_CHECK"]);
 // Real queue rows require an explicit live mode and server-side claim fencing.
 const API = "https://ayewunekctfmdxgjtqfl.supabase.co/rest/v1/";
 
@@ -79,7 +76,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
         const common = {
           select: "id",
           test_only: "eq.false",
-          source: LIVE_SOURCES,
+          source: "eq.chatgpt-scheduled",
           attempts: "lt.4",
           order: "updated_at.asc",
           limit: String(limitValue),
@@ -124,7 +121,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
         select: "id,schema_version,source,repository,project_id,task_id,pr_number,reviewed_sha,verdict,findings,ci,review_summary,observed_at,test_only,status,attempts,claimed_at,lease_until,github_review_id,merge_sha",
         id: "eq." + id,
         test_only: live ? "eq.false" : "eq.true",
-        ...(live ? { source: LIVE_SOURCES } : {}),
+        ...(live ? { source: "eq.chatgpt-scheduled" } : {}),
         limit: "1",
       });
       result = await postgres(QUEUE + "?" + q, dbKey);
@@ -137,38 +134,9 @@ Deno.serve(async (request: Request): Promise<Response> => {
 
     if (request.method !== "POST") return response(405, { error: "unsupported method" });
     const bytes = await request.text();
-    if (bytes.length > 24000) return response(413, { error: "request too large" });
+    if (bytes.length > 6000) return response(413, { error: "request too large" });
     let value: unknown;
     try { value = JSON.parse(bytes); } catch { return response(400, { error: "invalid JSON" }); }
-    if (object(value) && value.action === "enqueue") {
-      const row = value.row;
-      if (!expectedPayload(value, ["action", "mode", "row"]) || value.mode !== "live" || !object(row) ||
-          !expectedPayload(row, ["repository", "project_id", "task_id", "pr_number", "reviewed_sha",
-            "verdict", "findings", "ci", "review_summary", "observed_at"]) ||
-          typeof row.repository !== "string" || !/^AlexBDevCorner\/[A-Za-z0-9_.-]+$/.test(row.repository) ||
-          typeof row.project_id !== "string" || !/^[a-z0-9-]+$/.test(row.project_id) ||
-          typeof row.task_id !== "string" || !/^[A-Z][A-Z0-9]*-[0-9]+$/.test(row.task_id) ||
-          !Number.isSafeInteger(row.pr_number) || (row.pr_number as number) < 1 ||
-          typeof row.reviewed_sha !== "string" || !/^[a-f0-9]{40}$/.test(row.reviewed_sha) ||
-          !ENQUEUE_VERDICTS.has(String(row.verdict)) ||
-          !Array.isArray(row.findings) || row.findings.length > 25 || !object(row.ci) ||
-          typeof row.review_summary !== "string" || row.review_summary.length > 4000 ||
-          typeof row.observed_at !== "string" || Number.isNaN(Date.parse(row.observed_at))) {
-        return response(422, { error: "invalid enqueue request" });
-      }
-      result = await postgres("rpc/review_bridge_enqueue_live_review", dbKey, {
-        p_repository: row.repository, p_project_id: row.project_id, p_task_id: row.task_id,
-        p_pr_number: row.pr_number, p_reviewed_sha: row.reviewed_sha, p_verdict: row.verdict,
-        p_findings: row.findings, p_ci: row.ci, p_review_summary: row.review_summary,
-        p_observed_at: row.observed_at,
-      });
-      if (!result.ok) throw new Error("database enqueue status " + result.status);
-      const id = await result.json();
-      if (id !== null && (typeof id !== "string" || !UUID.test(id))) throw new Error("database returned invalid enqueue id");
-      // null: a live verdict for this exact head already exists. Never insert a competing decision.
-      return response(200, id ? { id } : { duplicate: true });
-    }
-
     if (!object(value) || typeof value.id !== "string" || !UUID.test(value.id)) {
       return response(422, { error: "invalid queue request" });
     }

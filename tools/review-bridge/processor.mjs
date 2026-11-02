@@ -72,26 +72,6 @@ export class QueueApi {
     }
     return payload.ids;
   }
-  // Returns the new row UUID, or null when a live verdict for that exact head already exists.
-  async enqueue(row) {
-    if (this.mode !== 'live') throw new Error('Enqueue is live-only');
-    const response = await this.fetcher(new URL(EDGE), {
-      method: 'POST',
-      redirect: 'error',
-      headers: {
-        'x-review-bridge-queue-token': this.token,
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ action: 'enqueue', mode: 'live', row }),
-      signal: AbortSignal.timeout(20000),
-    });
-    if (!response.ok) throw new Error('Queue enqueue returned HTTP ' + response.status);
-    const reply = await response.json();
-    if (reply?.duplicate === true) return null;
-    if (!isUuid(reply?.id)) throw new Error('Malformed queue enqueue response');
-    return reply.id;
-  }
   async get(id) {
     const payload = await this.request('GET', id);
     if (!payload) return null;

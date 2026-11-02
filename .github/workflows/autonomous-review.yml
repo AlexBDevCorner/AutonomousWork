@@ -52,7 +52,7 @@ env:
 
 jobs:
   # Holds the model credential and untrusted PR files. No GitHub write token,
-  # no queue token, and the PR checkout is read as data, never executed.
+  # and the PR checkout is read as data, never executed.
   review:
     if: github.ref == 'refs/heads/master' && vars.AUTONOMOUS_REVIEW_ENABLED == 'true' && inputs.mode == 'review'
     runs-on: ubuntu-latest
@@ -198,19 +198,33 @@ jobs:
           permission-contents: read
           permission-pull-requests: read
           permission-checks: read
-      - name: Enqueue MERGE_CHECK when merge guards pass
+      - name: Obtain MERGE worker App token
+        id: merge-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.AUTONOMOUS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTONOMOUS_APP_PRIVATE_KEY }}
+          owner: AlexBDevCorner
+          repositories: |
+            RepoManager
+            MandarinBotNet
+            MtgSoloSports
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Guarded merge of the trusted exact-head approval
         env:
           GITHUB_TOKEN_READ: ${{ steps.read-token.outputs.token }}
-          REVIEW_BRIDGE_QUEUE_TOKEN: ${{ secrets.REVIEW_BRIDGE_QUEUE_TOKEN }}
+          MERGE_GH_TOKEN: ${{ steps.merge-token.outputs.token }}
+          AUTONOMOUS_REVIEW_ENABLED: ${{ vars.AUTONOMOUS_REVIEW_ENABLED }}
         run: node tools/review-bridge/opencode-review.mjs merge-check
 
-  # Trusted, model-free: re-validates the verdict against live GitHub/control state
-  # and enqueues it. The review bridge then posts the review and guards any merge.
-  enqueue:
+  # Trusted, model-free, no PR code: re-validates the verdict against live GitHub/control
+  # state, then posts the commit-bound review and guarded merge with the bridge's own writers.
+  apply:
     needs: review
     if: needs.review.outputs.eligible == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
         with:
@@ -234,13 +248,28 @@ jobs:
           permission-contents: read
           permission-pull-requests: read
           permission-checks: read
+      - name: Obtain MERGE worker App token
+        id: merge-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.AUTONOMOUS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTONOMOUS_APP_PRIVATE_KEY }}
+          owner: AlexBDevCorner
+          repositories: |
+            RepoManager
+            MandarinBotNet
+            MtgSoloSports
+          permission-contents: write
+          permission-pull-requests: write
       - uses: actions/download-artifact@v4
         with:
           name: verdict
           path: ${{ runner.temp }}/verdict
-      - name: Re-validate and enqueue verdict
+      - name: Re-validate verdict, post review, guarded merge
         env:
           GITHUB_TOKEN_READ: ${{ steps.read-token.outputs.token }}
-          REVIEW_BRIDGE_QUEUE_TOKEN: ${{ secrets.REVIEW_BRIDGE_QUEUE_TOKEN }}
+          MERGE_GH_TOKEN: ${{ steps.merge-token.outputs.token }}
+          AUTONOMOUS_REVIEWER_TOKEN: ${{ secrets.AUTONOMOUS_REVIEWER_TOKEN }}
+          AUTONOMOUS_REVIEW_ENABLED: ${{ vars.AUTONOMOUS_REVIEW_ENABLED }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: node tools/review-bridge/opencode-review.mjs enqueue "$RUNNER_TEMP/verdict/verdict.json"
+        run: node tools/review-bridge/opencode-review.mjs apply "$RUNNER_TEMP/verdict/verdict.json"

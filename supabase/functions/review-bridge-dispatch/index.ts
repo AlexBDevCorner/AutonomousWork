@@ -44,7 +44,7 @@ function validInsert(body: unknown): body is {
   const row = record as Record<string, unknown>;
   return typeof row.id === "string" && UUID.test(row.id) &&
     row.schema_version === 1 &&
-    ["chatgpt-scheduled", "opencode-actions"].includes(String(row.source)) &&
+    row.source === "chatgpt-scheduled" &&
     row.status === "queued" &&
     typeof row.test_only === "boolean" &&
     typeof row.repository === "string" &&

@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { checkModel, eligibility, parseVerdict, queueRow, reviewInput, validateVerdict } from './opencode-review.mjs';
-import { QueueApi } from './processor.mjs';
+import { checkModel, eligibility, parseVerdict, publish, reviewRow, reviewInput, validateVerdict } from './opencode-review.mjs';
 import { validateRecord } from './guards.mjs';
 
 const sha = 'a'.repeat(40);
@@ -50,16 +49,18 @@ test('configured model and variant must be advertised; no silent fallback', () =
   assert.equal(checkModel(listing, 'opencode-go/kimi-k3.1-pro', 'max').variant, 'max');
 });
 
-test('queue row keeps only blocking findings and surfaces P2s and the model in the body', () => {
-  const row = queueRow(verdict({ verdict: 'REQUEST_CHANGES', findings: [p1, p2] }), input,
+test('review row keeps only blocking findings and surfaces P2s and the model in the body', () => {
+  const row = reviewRow(verdict({ verdict: 'REQUEST_CHANGES', findings: [p1, p2] }), input,
     { model: 'opencode-go/gemini-4-argon', variant: 'high', runUrl: 'https://example/run', ci: 'green', now: 0 });
   assert.deepEqual(row.findings, [p1]);
   assert.match(row.review_summary, /^Deployment context: Local/);
   assert.match(row.review_summary, /Non-blocking suggestions \(P2\):\n- RoundService: Add a restart/);
   assert.match(row.review_summary, /OpenCode opencode-go\/gemini-4-argon \(high\)/);
   assert.equal(row.reviewed_sha, sha);
+  // The bridge's own record validation accepts the in-memory row.
+  assert.equal(validateRecord(row, row.id, Date.now(), true), null);
   const many = Array.from({ length: 20 }, () => ({ ...p2, description: 'x'.repeat(1400) }));
-  assert.ok(queueRow(verdict({ summary: 'y'.repeat(2500), findings: many }), input,
+  assert.ok(reviewRow(verdict({ summary: 'y'.repeat(2500), findings: many }), input,
     { model: 'm/x', variant: 'high', ci: 'green' }).review_summary.length <= 4000);
 });
 
@@ -97,18 +98,37 @@ test('eligibility uses bridge guards, retries control races, and fails closed', 
   await assert.rejects(eligibility({ api: {}, input, verify: f.verify }), /control_master_advanced/);
 });
 
-test('enqueue is live-only and distinguishes new rows from exact-head duplicates', async () => {
-  const id = '11111111-1111-4111-8111-111111111111';
-  const calls = [];
-  const queue = reply => new QueueApi('t'.repeat(32), async (url, init) => {
-    calls.push(JSON.parse(init.body));
-    return { ok: true, json: async () => reply };
-  }, 'live');
-  assert.equal(await queue({ id }).enqueue({ task_id: 'MSS-101' }), id);
-  assert.deepEqual(calls[0], { action: 'enqueue', mode: 'live', row: { task_id: 'MSS-101' } });
-  assert.equal(await queue({ duplicate: true }).enqueue({}), null);
-  await assert.rejects(queue({ id: 'nope' }).enqueue({}), /Malformed/);
-  await assert.rejects(new QueueApi('t'.repeat(32), fetch, 'test').enqueue({}), /live-only/);
+test('publish routes each verdict only through guarded writers after a live re-check', async () => {
+  const run = async (v, decision = { status: 'dry_run', reason: 'x', evidence: { ci: 'green' } }, merged = true) => {
+    const calls = [];
+    const writes = {
+      review: async row => { calls.push(['review', row.verdict, row.findings.length]); return 55; },
+      merge: async row => { calls.push(['merge', row.reviewed_sha]); return merged ? { merged: true, sha: 'd'.repeat(40) }
+        : { merged: false, decision: { reason: 'pr_closed_draft_unmergeable_or_unknown' } }; },
+      comment: async row => { calls.push(['comment', row.review_summary]); },
+    };
+    const check = async args => { calls.push(['check', args.verdict, args.findings.length]);
+      return { eligible: decision.status === 'dry_run', decision }; };
+    const result = await publish({ verdict: validateVerdict(v), input, api: {}, writes, check,
+      meta: { model: 'opencode-go/gemini-4-argon', variant: 'high' } });
+    return { result, calls };
+  };
+  let { result, calls } = await run(verdict());
+  assert.deepEqual(calls, [['check', 'APPROVE', 0], ['review', 'APPROVE', 0], ['merge', sha]]);
+  assert.deepEqual([result.outcome, result.reviewId, result.mergeSha], ['merged', 55, 'd'.repeat(40)]);
+  ({ result, calls } = await run(verdict(), undefined, false));
+  assert.deepEqual([result.outcome, result.reason], ['review_posted_merge_withheld', 'pr_closed_draft_unmergeable_or_unknown']);
+  // REQUEST_CHANGES never merges; only blocking findings reach the review row.
+  ({ result, calls } = await run(verdict({ verdict: 'REQUEST_CHANGES', findings: [p1, p2] })));
+  assert.deepEqual(calls, [['check', 'REQUEST_CHANGES', 1], ['review', 'REQUEST_CHANGES', 1]]);
+  // WITHHOLD only makes the escalation visible; no review, no merge.
+  ({ result, calls } = await run(verdict({ verdict: 'WITHHOLD' })));
+  assert.deepEqual(calls.map(c => c[0]), ['check', 'comment']);
+  assert.equal(result.outcome, 'withheld');
+  // A live state change since the model ran discards the verdict without any write.
+  ({ result, calls } = await run(verdict(), { status: 'stale', reason: 'reviewed_head_changed' }));
+  assert.deepEqual(calls.map(c => c[0]), ['check']);
+  assert.deepEqual([result.outcome, result.reason], ['discarded', 'reviewed_head_changed']);
 });
 
 test('bridge accepts OpenCode rows and still rejects unknown sources', () => {

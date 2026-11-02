@@ -2,9 +2,9 @@
 
 Review autonomous PRs only at their exact current head commit. The event-driven
 OpenCode reviewer (`reviewer/OPENCODE_REVIEW.md`) owns the independent code-review
-assessment; trusted Actions code writes its validated verdict to the
-Supabase review queue. The trusted default-branch GitHub Actions workflow submits
-actual commit-bound GitHub reviews and performs independently guarded merges.
+assessment. Model-free jobs of the same trusted default-branch GitHub Actions
+workflow submit actual commit-bound GitHub reviews and perform independently
+guarded merges.
 Deterministic code owns dispatch, retry/correction counters, and task status.
 
 ## Eligibility
@@ -70,11 +70,12 @@ Before reviewing or merging anything:
 5. Produce REQUEST_CHANGES when any P0/P1 finding remains. Produce APPROVE
    only when no P0/P1 finding remains and every configured required check
    completed successfully for this exact head. Missing, pending, skipped,
-   cancelled, or failed required checks withhold approval. Write an accurate
-   structured verdict to Supabase; the workflow performs GitHub review writes.
-6. Immediately before enqueuing, re-read the PR head and raw trusted reviews.
+   cancelled, or failed required checks withhold approval. The reviewer
+   produces an accurate structured verdict; model-free code performs GitHub
+   review writes.
+6. Immediately before posting, re-read the PR head and raw trusted reviews.
    If either changes, discard the verdict and review the new revision instead.
-   The queue row must name the exact `reviewed_sha`. The workflow submits the
+   The verdict names the exact `reviewed_sha`. The workflow submits the
    GitHub review with `commit_id=reviewed_sha`, then independently verifies it.
 
 The reviewer identity must be listed in `automation/config.json.reviewers` and
@@ -106,10 +107,9 @@ mergeable, a rule blocks the merge, or any other guard is uncertain, do not
 retry by weakening the guard. Leave the PR for a later scheduled pass or human
 inspection.
 
-A trusted approval from an earlier run may be merged on a later queue event
+A trusted approval from an earlier run may be merged by a later merge-check run
 without duplicating a review, provided every merge guard above is freshly
-re-validated against current GitHub state. Enqueue MERGE_CHECK for the exact
-approved head when eligible. If a normalized review-list
+re-validated against current GitHub state. If a normalized review-list
 response omits `commit_id`, use the same raw reviews REST fallback described in
 the Review section before withholding a merge.
 
@@ -135,19 +135,18 @@ No model runs on idle ticks.
 The workflow first re-runs the bridge guards for that exact head (no model).
 Only when eligible does one read-only OpenCode run review the PR checkout as
 data, with read/grep/glob/list tools only, PR-supplied OpenCode configuration
-and agent instructions removed, and no GitHub write or queue credential. Its
-verdict must match the strict output contract in `reviewer/OPENCODE_REVIEW.md`.
-A separate model-free job re-validates the verdict against live state and
-inserts one `source=opencode-actions` queue row; the queue rejects a second
-review verdict for the same repository/PR/SHA. `WITHHOLD` records an
-escalation for a human and posts no GitHub review.
+and agent instructions removed, and no GitHub write credential. Its verdict
+must match the strict output contract in `reviewer/OPENCODE_REVIEW.md`.
+A separate model-free job re-validates the verdict and re-runs every guard
+against live state, submits the review under the separate trusted identity and
+confirms it from raw GitHub reviews, then for APPROVE merges with the expected
+SHA using the distinct GitHub App token when every merge guard still passes.
+An existing trusted review of the exact head is never duplicated. `WITHHOLD`
+posts no GitHub review, only a PR comment explaining what a human must decide.
 
 For an exact head that already has a trusted APPROVED review but is still open,
 the dispatcher dispatches a model-free `merge-check <TASK-ID> <SHA>` run that
-enqueues MERGE_CHECK. For a completed CHANGES_REQUESTED on the exact head,
-nothing is enqueued until the worker advances it. The bridge independently
-fetches each row using the scoped queue token, verifies all guards, submits the
-review under the separate trusted identity, then merges with the expected SHA
-using the distinct GitHub App token when eligible. The dispatcher handles
+performs the same guarded merge. For a completed CHANGES_REQUESTED on the exact
+head, nothing runs until the worker advances it. The dispatcher handles
 correction rounds, and the reconciler marks work done only after confirming the
 actual merge.

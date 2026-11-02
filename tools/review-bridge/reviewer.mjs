@@ -4,7 +4,7 @@ import { appendFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { GitHub } from '../autonomy/github.mjs';
 import { QueueApi, evaluate } from './processor.mjs';
-import { findingDescription, isUuid, terminal, SOURCES } from './guards.mjs';
+import { findingDescription, isUuid, terminal } from './guards.mjs';
 
 const OWNER = /^AlexBDevCorner\/[A-Za-z0-9_.-]+$/;
 const apiRoot = row => {
@@ -32,7 +32,7 @@ function asEvidence(decision) {
 function verifyClaim(row,id,clock) {
   if (!row || row.id !== id || row.status !== 'processing' || row.test_only !== false ||
       !OWNER.test(row.repository) || !/^[a-z0-9-]+$/.test(row.project_id) ||
-      !SOURCES.has(row.source) || !isUuid(row.claim_token) ||
+      row.source !== 'chatgpt-scheduled' || !isUuid(row.claim_token) ||
       !Number.isFinite(Date.parse(row.lease_until)) ||
       Date.parse(row.lease_until) <= clock()) throw Error('Invalid live queue claim');
 }
@@ -120,6 +120,18 @@ export async function submitReview({api,fetcher,token,row,
      pr?.head?.sha!==row.reviewed_sha)
     throw Error('Posted exact-head review cannot be independently confirmed');
   return payload.id;
+}
+// The independent reviewer must not be the PR author: the personal reviewer token normally,
+// the worker App for PRs the personal account authored (manual recovery PRs).
+export async function postReview({api,fetcher,row,reviewerToken,appToken}) {
+  const pr=await api.request('GET',apiRoot(row)+'/pulls/'+row.pr_number);
+  const useAppReviewer=lower(pr?.user?.login)===lower(PERSONAL_REVIEWER);
+  return submitReview({
+    api,fetcher,row,
+    token:useAppReviewer ? appToken : reviewerToken,
+    expectedReviewer:useAppReviewer ? APP_REVIEWER : PERSONAL_REVIEWER,
+    verifyIdentity:!useAppReviewer,
+  });
 }
 export async function guardedMerge({api,fetcher,token,row,clock,evaluator=evaluate}) {
   // Evaluate MERGE_CHECK freshly, even immediately after our own approval.
@@ -214,14 +226,7 @@ export async function runReviewer({queue,api,reviewerToken,mergeToken,id,
       const fresh=await evaluator({api,row,now:clock(),live:true});
       if(fresh.status==='dry_run'&&fresh.reason===before.reason &&
          fresh.evidence?.control_sha===before.evidence?.control_sha) {
-        const pr=await api.request('GET',apiRoot(row)+'/pulls/'+row.pr_number);
-        const useAppReviewer=lower(pr?.user?.login)===lower(PERSONAL_REVIEWER);
-        reviewId=await submitReview({
-          api,fetcher,row,
-          token:useAppReviewer ? mergeToken : reviewerToken,
-          expectedReviewer:useAppReviewer ? APP_REVIEWER : PERSONAL_REVIEWER,
-          verifyIdentity:!useAppReviewer,
-        });
+        reviewId=await postReview({api,fetcher,row,reviewerToken,appToken:mergeToken});
         report=result('applied','review_posted',{reviewed_sha:row.reviewed_sha}, {review_id:reviewId});
       } else report=fresh;
     }
