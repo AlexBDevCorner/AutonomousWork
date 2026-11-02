@@ -952,3 +952,47 @@ test('arbitration verdicts are typed, bound to the dispute, and fail toward the 
   const entry = arbitrationRecord(request, applyVerdict(request, verdict()), now);
   assert.deepEqual([entry.status, entry.action, entry.reviewId, entry.disagreementUrl], ['decided', 'rereview', 12, request.disagreementUrl]);
 });
+
+test('arbiter re-verifies the dispatched dispute and only accepts a bound verdict', async () => {
+  const { disputeInput, verifyDispute, parseArbitration, disputeSnapshot } = await import('./arbiter.mjs');
+  const { arbitrationRequest } = await import('./arbitration.mjs');
+  const f = disagreementFixture(); f.state.executions[0].blockReason = 'autonomous_review_disagreement';
+  f.config.projects.repomanager.branch = 'master';
+  const request = arbitrationRequest(f.state.executions[0], f.snapshot, f.config, now);
+  const env = { TASK_ID: 'RM-001', PROJECT_ID: 'repomanager', REPOSITORY: 'AlexBDevCorner/Repo', PR: '1',
+    HEAD_SHA: sha, REVIEW_ID: '12', FINGERPRINT: request.fingerprint };
+  const input = { ...disputeInput(env), repository: 'Owner/Repo' };
+  for (const bad of [{ PR: '01' }, { REVIEW_ID: 'x' }, { FINGERPRINT: 'f'.repeat(63) }, { REPOSITORY: 'Evil/Repo' }])
+    assert.throws(() => disputeInput({ ...env, ...bad }), /Invalid arbitration/);
+  const verify = (over = {}, mutate = () => {}) => {
+    const g = structuredClone({ config: f.config, state: f.state, snapshot: f.snapshot }); mutate(g);
+    return verifyDispute({ input: { ...input, ...over }, config: g.config, state: g.state, snapshot: g.snapshot, now });
+  };
+  assert.equal(verify().fingerprint, request.fingerprint);
+  assert.throws(() => verify({ fingerprint: 'e'.repeat(64) }), /no longer arbitrable/);
+  assert.throws(() => verify({ reviewId: 13 }), /no longer arbitrable/);
+  assert.throws(() => verify({}, g => { g.snapshot.prs[0].head.sha = 'c'.repeat(40); }), /no longer arbitrable/);
+  assert.throws(() => verify({ pr: 2 }), /recorded execution/);
+  assert.throws(() => verify({}, g => { g.config.enabled = false; }), /recorded execution/);
+
+  const dispute = { task_id: 'RM-001', review_id: 12, reviewed_sha: sha, fingerprint: request.fingerprint };
+  const verdict = { decision: 'UPHOLD_WORKER', ...dispute, confidence: 'high', high_impact_risk: 'none', rationale: 'r',
+    evidence: [{ path: 'a.cs', note: 'n' }] };
+  const log = v => 'quoted BEGIN_ARBITRATION_VERDICT {"decision":"UPHOLD_REVIEWER"} END_ARBITRATION_VERDICT\n' +
+    'BEGIN_ARBITRATION_VERDICT\n' + JSON.stringify(v) + '\nEND_ARBITRATION_VERDICT';
+  assert.equal(parseArbitration(log(verdict), dispute).outcome.action, 'rereview');
+  assert.throws(() => parseArbitration(log({ ...verdict, reviewed_sha: 'c'.repeat(40) }), dispute), /not bound/);
+  assert.throws(() => parseArbitration('nothing', dispute), /no verdict/);
+
+  // The minimal snapshot carries exactly what arbitrationRequest needs.
+  const calls = [];
+  const api = {
+    pages: async path => { calls.push(path); return path.includes('/pulls?') ? [{ number: 1 }]
+      : path.includes('check-runs') ? f.snapshot.checks[1] : path.includes('/reviews') ? f.snapshot.reviews[1] : f.snapshot.comments[1]; },
+    request: async (_, path) => { calls.push(path); return path.includes('/actions/runs/') ? f.snapshot.runs[0] : f.snapshot.prs[0]; },
+  };
+  const e = { ...f.state.executions[0] }; e.attempts.at(-1).runId = 9;
+  const snap = await disputeSnapshot(api, e);
+  assert.equal(arbitrationRequest(e, snap, f.config, now).fingerprint, request.fingerprint);
+  assert.ok(calls[0].includes('head=Owner%3Aautonomous%2FRM-001'));
+});

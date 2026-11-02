@@ -106,22 +106,7 @@ jobs:
         if: steps.prepare.outputs.eligible == 'true'
         env:
           BASE_SHA: ${{ steps.prepare.outputs.base_sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(git -C pr rev-parse HEAD)" = "$HEAD_SHA"
-          ctx=pr/.autonomous-review
-          rm -rf "$ctx"
-          mkdir -p "$ctx"
-          git -C pr diff "$BASE_SHA...$HEAD_SHA" > "$ctx/diff.patch"
-          git -C pr show "$BASE_SHA:AGENTS.md" > "$ctx/AGENTS.base.md"
-          # PR-controlled OpenCode config, plugins or agent instructions could grant
-          # tools, run code beside the API key, or pose as reviewer instructions.
-          rm -rf pr/.opencode pr/opencode.json pr/opencode.jsonc pr/AGENTS.md pr/CLAUDE.md pr/.claude
-          cp -r "$RUNNER_TEMP/evidence/." "$ctx/"
-          cp "control/projects/$PROJECT_ID/tasks/$TASK_ID.md" "$ctx/task.md"
-          cp -r "control/projects/$PROJECT_ID" "$ctx/project"
-          cp control/reviewer/CHATGPT_REVIEW.md "$ctx/protocol.md"
+        run: bash control/tools/review-bridge/workspace.sh pr "$BASE_SHA" "$HEAD_SHA" "$RUNNER_TEMP/evidence"
       - name: Install pinned OpenCode CLI
         if: steps.prepare.outputs.eligible == 'true'
         run: |
@@ -135,7 +120,7 @@ jobs:
         run: |
           set -euo pipefail
           opencode models "${REVIEWER_MODEL%%/*}" --verbose > "$RUNNER_TEMP/models.txt"
-          node control/tools/review-bridge/opencode-review.mjs check-model "$RUNNER_TEMP/models.txt"
+          node control/tools/review-bridge/opencode-review.mjs check-model "$RUNNER_TEMP/models.txt" "$REVIEWER_MODEL" "$REVIEWER_VARIANT"
       - name: Run OpenCode reviewer with read-only tools
         if: steps.prepare.outputs.eligible == 'true'
         timeout-minutes: 35
