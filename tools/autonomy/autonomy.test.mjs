@@ -871,3 +871,84 @@ test('failed worker authorization is classified only with concrete log evidence'
   fake.jobLogs = async () => 'Error: dotnet build failed';
   assert.equal(await fake.classifyWorkerFailure('Owner/Repo', { id: 8, conclusion: 'failure' }), 'execution');
 });
+
+test('arbitration requests only a verified exact-head dispute, fingerprinted per disagreement', async () => {
+  const { arbitrationRequest } = await import('./arbitration.mjs');
+  const dispute = () => { const f = disagreementFixture(); f.state.executions[0].blockReason = 'autonomous_review_disagreement'; return f; };
+  const request = f => arbitrationRequest(f.state.executions[0], f.snapshot, f.config, now);
+  let f = dispute();
+  const r = request(f);
+  assert.equal(r.reviewId, 12);
+  assert.equal(r.headSha, sha);
+  assert.equal(r.disagreementUrl, 'https://github.com/Owner/Repo/pull/1#issuecomment-99');
+  assert.match(r.fingerprint, /^[a-f0-9]{64}$/);
+  assert.equal(request(dispute()).fingerprint, r.fingerprint);
+  f = dispute(); f.snapshot.comments[1][0].body += ' Edited.';
+  assert.notEqual(request(f).fingerprint, r.fingerprint);
+  const refused = [
+    f => { f.state.executions[0].blockReason = 'worker_failure'; },
+    f => { f.snapshot.prs[0].head.sha = 'c'.repeat(40); },
+    f => { f.snapshot.checks[1][0].status = 'in_progress'; },
+    f => { f.snapshot.reviews[1].push({ id: 13, user: { login: 'review-bot' }, commit_id: sha, state: 'APPROVED',
+      submitted_at: new Date(now + 1).toISOString() }); },
+    f => { f.snapshot.reviews[1][0].user.login = 'stranger'; },
+    f => { f.snapshot.comments[1] = []; },
+    f => { f.snapshot.comments[1][0].user = { login: 'mallory', id: 5, type: 'User' }; },
+    f => { f.snapshot.prs[0].draft = true; },
+    f => { f.snapshot.prs[0].state = 'closed'; },
+    f => { f.snapshot.prs.push({ ...f.snapshot.prs[0], number: 2 }); },
+  ];
+  for (const change of refused) { f = dispute(); change(f); assert.equal(request(f), null); }
+});
+
+test('arbitration runs exactly once per dispute with one bounded retry', async () => {
+  const { planArbitration, arbitrationTitle } = await import('./arbitration.mjs');
+  const request = { taskId: 'RM-001', reviewId: 12, headSha: sha, fingerprint: 'f'.repeat(64) };
+  const title = arbitrationTitle('RM-001', 12, sha);
+  const plan = (runs, arbitrations) => planArbitration({ arbitrations }, request, runs).action;
+  assert.equal(plan([]), 'dispatch');
+  assert.equal(plan([{ display_title: title, status: 'queued' }]), 'wait');
+  assert.equal(plan([{ display_title: title, status: 'completed', conclusion: 'success' }]), 'await_verdict');
+  assert.equal(plan([{ display_title: title, status: 'completed', conclusion: 'failure' }]), 'dispatch');
+  assert.equal(plan(Array(2).fill({ display_title: title, status: 'completed', conclusion: 'failure' })), 'escalate');
+  assert.equal(plan([{ display_title: 'arbitrate RM-001 12 ' + 'c'.repeat(40), status: 'completed', conclusion: 'success' }]), 'dispatch');
+  for (const status of ['decided', 'escalated'])
+    assert.equal(plan([], [{ fingerprint: request.fingerprint, status }]), 'none');
+  assert.equal(planArbitration({}, null, []).action, 'none');
+});
+
+test('arbitration verdicts are typed, bound to the dispute, and fail toward the human', async () => {
+  const { validateVerdict, applyVerdict, arbitrationRecord } = await import('./arbitration.mjs');
+  const request = { taskId: 'RM-001', reviewId: 12, headSha: sha, fingerprint: 'f'.repeat(64),
+    disagreementUrl: 'https://github.com/Owner/Repo/pull/1#issuecomment-99' };
+  const base = { task_id: 'RM-001', review_id: 12, reviewed_sha: sha, fingerprint: 'f'.repeat(64), confidence: 'high',
+    high_impact_risk: 'none', rationale: 'Read RoundService and the restart test.',
+    evidence: [{ path: 'src/RoundService.cs', line: 10, note: 'Standings rebuilt from immutable rounds.' }] };
+  const upheld = { ...base, decision: 'UPHOLD_REVIEWER', trigger: 'Simulate a league round.',
+    invariant: 'Cup RNG untouched by league rounds.', correction: 'Use the league RNG stream in SimulateRound.' };
+  const verdict = extra => validateVerdict({ ...base, decision: 'UPHOLD_WORKER', ...extra });
+
+  assert.deepEqual(applyVerdict(request, verdict()), { status: 'decided', action: 'rereview', decision: 'UPHOLD_WORKER', overturnedReviewId: 12 });
+  assert.equal(applyVerdict(request, validateVerdict(upheld)).action, 'correction');
+  assert.equal(applyVerdict(request, validateVerdict(upheld)).correction, upheld.correction);
+  assert.equal(applyVerdict(request, validateVerdict({ ...upheld, decision: 'COMPROMISE_FIX' })).action, 'correction');
+  assert.equal(applyVerdict(request, validateVerdict({ ...base, decision: 'ESCALATE_HUMAN', evidence: undefined,
+    reason: 'Conflicting requirements.' })).action, 'hold');
+  // Low confidence binds in neither direction; high-impact overturns need a human.
+  assert.equal(applyVerdict(request, verdict({ confidence: 'medium' })).reason, 'arbiter_not_confident');
+  assert.equal(applyVerdict(request, validateVerdict({ ...upheld, confidence: 'low' })).action, 'hold');
+  for (const risk of ['security', 'data_loss', 'save_corruption', 'integrity'])
+    assert.equal(applyVerdict(request, verdict({ high_impact_risk: risk })).reason, 'high_impact_overturn_requires_human');
+  // Stale or forged bindings never act.
+  for (const extra of [{ reviewed_sha: 'c'.repeat(40) }, { review_id: 13 }, { fingerprint: 'e'.repeat(64) }, { task_id: 'RM-002' }])
+    assert.equal(applyVerdict(request, verdict(extra)).status, 'stale');
+  // No approval/merge authority or missing evidence can sneak in.
+  assert.throws(() => verdict({ approve: true }), /unknown fields/);
+  assert.throws(() => verdict({ decision: 'APPROVE' }), /Unknown arbitration decision/);
+  assert.throws(() => verdict({ evidence: [] }), /evidence/);
+  assert.throws(() => validateVerdict({ ...upheld, correction: undefined }), /bounded correction/);
+  assert.throws(() => verdict({ high_impact_risk: true }), /risk/);
+  assert.throws(() => verdict({ fingerprint: undefined }), /not bound/);
+  const entry = arbitrationRecord(request, applyVerdict(request, verdict()), now);
+  assert.deepEqual([entry.status, entry.action, entry.reviewId, entry.disagreementUrl], ['decided', 'rereview', 12, request.disagreementUrl]);
+});
