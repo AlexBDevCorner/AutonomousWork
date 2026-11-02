@@ -53,8 +53,8 @@ env:
   HEAD_SHA: ${{ inputs.head_sha }}
   SUPERSEDES_REVIEW_ID: ${{ inputs.supersedes_review_id }}
   # Reviewer model is independent from the coding worker and the #35 arbiter.
-  REVIEWER_MODEL: ${{ vars.REVIEWER_MODEL || 'opencode-go/deepseek-v4-pro' }}
-  REVIEWER_VARIANT: ${{ vars.REVIEWER_VARIANT || 'high' }}
+  REVIEWER_MODEL: ${{ vars.REVIEWER_MODEL || 'opencode-go/deepseek-v4.1-flash' }}
+  REVIEWER_VARIANT: ${{ vars.REVIEWER_VARIANT || 'max' }}
 
 jobs:
   # Holds the model credential and untrusted PR files. No GitHub write token,
