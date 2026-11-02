@@ -53,7 +53,7 @@ env:
   HEAD_SHA: ${{ inputs.head_sha }}
   SUPERSEDES_REVIEW_ID: ${{ inputs.supersedes_review_id }}
   # Reviewer model is independent from the coding worker and the #35 arbiter.
-  REVIEWER_MODEL: ${{ vars.REVIEWER_MODEL || 'opencode-go/gemini-4-argon' }}
+  REVIEWER_MODEL: ${{ vars.REVIEWER_MODEL || 'opencode-go/deepseek-v4-pro' }}
   REVIEWER_VARIANT: ${{ vars.REVIEWER_VARIANT || 'high' }}
 
 jobs:
@@ -141,6 +141,13 @@ jobs:
           set -euo pipefail
           opencode run --model "$REVIEWER_MODEL" --variant "$REVIEWER_VARIANT" \
             "$(cat ../control/reviewer/OPENCODE_REVIEW.md)" 2>&1 | tee "$RUNNER_TEMP/opencode.log"
+      - name: Record model token usage and cost
+        if: always() && steps.prepare.outputs.eligible == 'true'
+        shell: bash
+        # A fresh runner holds only this run's session, so the stats are this run's usage.
+        run: |
+          command -v opencode > /dev/null || exit 0
+          { echo '### Model usage'; echo '```'; opencode stats --models | sed 's/\x1b\[[0-9;]*[A-Za-z]//g'; echo '```'; } >> "$GITHUB_STEP_SUMMARY" || true
       - name: Validate structured verdict
         if: steps.prepare.outputs.eligible == 'true'
         env:
