@@ -4,7 +4,7 @@ import { appendFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { GitHub } from '../autonomy/github.mjs';
 import { QueueApi, evaluate } from './processor.mjs';
-import { findingDescription, isUuid, terminal } from './guards.mjs';
+import { findingDescription, isUuid, terminal, SOURCES } from './guards.mjs';
 
 const OWNER = /^AlexBDevCorner\/[A-Za-z0-9_.-]+$/;
 const apiRoot = row => {
@@ -32,7 +32,7 @@ function asEvidence(decision) {
 function verifyClaim(row,id,clock) {
   if (!row || row.id !== id || row.status !== 'processing' || row.test_only !== false ||
       !OWNER.test(row.repository) || !/^[a-z0-9-]+$/.test(row.project_id) ||
-      row.source !== 'chatgpt-scheduled' || !isUuid(row.claim_token) ||
+      !SOURCES.has(row.source) || !isUuid(row.claim_token) ||
       !Number.isFinite(Date.parse(row.lease_until)) ||
       Date.parse(row.lease_until) <= clock()) throw Error('Invalid live queue claim');
 }

@@ -1,0 +1,246 @@
+name: Autonomous OpenCode reviewer
+# Dispatched by the deterministic dispatcher for one eligible exact PR head.
+# The unique run name is how the dispatcher deduplicates and bounds retries.
+run-name: ${{ inputs.mode == 'merge_check' && 'merge-check' || 'review' }} ${{ inputs.task_id }} ${{ inputs.head_sha }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "review (OpenCode model) or merge_check (model-free, existing approval)"
+        type: choice
+        required: true
+        default: review
+        options: [review, merge_check]
+      task_id:
+        description: "Task ID in review"
+        required: true
+        type: string
+      project_id:
+        description: "Control project ID"
+        required: true
+        type: string
+      repository:
+        description: "Target Owner/Repo"
+        required: true
+        type: string
+      pr:
+        description: "Recorded autonomous PR number"
+        required: true
+        type: string
+      head_sha:
+        description: "Exact PR head SHA with green required CI"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: opencode-review-${{ inputs.repository }}-${{ inputs.pr }}
+  cancel-in-progress: false
+
+env:
+  TASK_ID: ${{ inputs.task_id }}
+  PROJECT_ID: ${{ inputs.project_id }}
+  REPOSITORY: ${{ inputs.repository }}
+  PR: ${{ inputs.pr }}
+  HEAD_SHA: ${{ inputs.head_sha }}
+  # Reviewer model is independent from the coding worker and the #35 arbiter.
+  REVIEWER_MODEL: ${{ vars.REVIEWER_MODEL || 'opencode-go/gemini-4-argon' }}
+  REVIEWER_VARIANT: ${{ vars.REVIEWER_VARIANT || 'high' }}
+
+jobs:
+  # Holds the model credential and untrusted PR files. No GitHub write token,
+  # no queue token, and the PR checkout is read as data, never executed.
+  review:
+    if: github.ref == 'refs/heads/master' && vars.AUTONOMOUS_REVIEW_ENABLED == 'true' && inputs.mode == 'review'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    outputs:
+      eligible: ${{ steps.prepare.outputs.eligible }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: master
+          path: control
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run review guard tests
+        run: node --test control/tools/review-bridge/*.test.mjs
+      - name: Obtain cross-repo READ-ONLY worker App token
+        id: read-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.AUTONOMOUS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTONOMOUS_APP_PRIVATE_KEY }}
+          owner: AlexBDevCorner
+          repositories: |
+            AutonomousWork
+            RepoManager
+            MandarinBotNet
+            MtgSoloSports
+          permission-contents: read
+          permission-pull-requests: read
+          permission-checks: read
+      - name: Check eligibility with bridge guards and collect evidence
+        id: prepare
+        working-directory: control
+        env:
+          GITHUB_TOKEN_READ: ${{ steps.read-token.outputs.token }}
+          EVIDENCE_DIR: ${{ runner.temp }}/evidence
+        run: node tools/review-bridge/opencode-review.mjs prepare
+      - name: Check out exact PR head as data
+        if: steps.prepare.outputs.eligible == 'true'
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ inputs.repository }}
+          ref: ${{ inputs.head_sha }}
+          token: ${{ steps.read-token.outputs.token }}
+          path: pr
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Assemble read-only review workspace
+        if: steps.prepare.outputs.eligible == 'true'
+        env:
+          BASE_SHA: ${{ steps.prepare.outputs.base_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C pr rev-parse HEAD)" = "$HEAD_SHA"
+          ctx=pr/.autonomous-review
+          rm -rf "$ctx"
+          mkdir -p "$ctx"
+          git -C pr diff "$BASE_SHA...$HEAD_SHA" > "$ctx/diff.patch"
+          git -C pr show "$BASE_SHA:AGENTS.md" > "$ctx/AGENTS.base.md"
+          # PR-controlled OpenCode config, plugins or agent instructions could grant
+          # tools, run code beside the API key, or pose as reviewer instructions.
+          rm -rf pr/.opencode pr/opencode.json pr/opencode.jsonc pr/AGENTS.md pr/CLAUDE.md pr/.claude
+          cp -r "$RUNNER_TEMP/evidence/." "$ctx/"
+          cp "control/projects/$PROJECT_ID/tasks/$TASK_ID.md" "$ctx/task.md"
+          cp -r "control/projects/$PROJECT_ID" "$ctx/project"
+          cp control/reviewer/CHATGPT_REVIEW.md "$ctx/protocol.md"
+      - name: Install pinned OpenCode CLI
+        if: steps.prepare.outputs.eligible == 'true'
+        run: |
+          npm install --global opencode-ai@1.18.35
+          opencode --version
+      - name: Confirm configured model and variant are available
+        if: steps.prepare.outputs.eligible == 'true'
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          opencode models "${REVIEWER_MODEL%%/*}" --verbose > "$RUNNER_TEMP/models.txt"
+          node control/tools/review-bridge/opencode-review.mjs check-model "$RUNNER_TEMP/models.txt"
+      - name: Run OpenCode reviewer with read-only tools
+        if: steps.prepare.outputs.eligible == 'true'
+        timeout-minutes: 35
+        working-directory: pr
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          OPENCODE_CONFIG_CONTENT: '{"permission":{"read":"allow","glob":"allow","grep":"allow","list":"allow","edit":"deny","bash":"deny","task":"deny","external_directory":"deny","todowrite":"deny","webfetch":"deny","websearch":"deny","lsp":"deny","skill":"deny","question":"deny","doom_loop":"deny"}}'
+        shell: bash
+        run: |
+          set -euo pipefail
+          opencode run --model "$REVIEWER_MODEL" --variant "$REVIEWER_VARIANT" \
+            "$(cat ../control/reviewer/OPENCODE_REVIEW.md)" 2>&1 | tee "$RUNNER_TEMP/opencode.log"
+      - name: Validate structured verdict
+        if: steps.prepare.outputs.eligible == 'true'
+        env:
+          VERDICT_FILE: ${{ runner.temp }}/verdict/verdict.json
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/verdict"
+          node control/tools/review-bridge/opencode-review.mjs parse "$RUNNER_TEMP/opencode.log"
+      - uses: actions/upload-artifact@v4
+        if: steps.prepare.outputs.eligible == 'true'
+        with:
+          name: verdict
+          path: ${{ runner.temp }}/verdict/verdict.json
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.prepare.outputs.eligible == 'true'
+        with:
+          name: opencode-log
+          path: ${{ runner.temp }}/opencode.log
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # Model-free: an exact head with a trusted approval only needs the bridge's guarded merge.
+  merge-check:
+    if: github.ref == 'refs/heads/master' && vars.AUTONOMOUS_REVIEW_ENABLED == 'true' && inputs.mode == 'merge_check'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: master
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Obtain cross-repo READ-ONLY worker App token
+        id: read-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.AUTONOMOUS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTONOMOUS_APP_PRIVATE_KEY }}
+          owner: AlexBDevCorner
+          repositories: |
+            AutonomousWork
+            RepoManager
+            MandarinBotNet
+            MtgSoloSports
+          permission-contents: read
+          permission-pull-requests: read
+          permission-checks: read
+      - name: Enqueue MERGE_CHECK when merge guards pass
+        env:
+          GITHUB_TOKEN_READ: ${{ steps.read-token.outputs.token }}
+          REVIEW_BRIDGE_QUEUE_TOKEN: ${{ secrets.REVIEW_BRIDGE_QUEUE_TOKEN }}
+        run: node tools/review-bridge/opencode-review.mjs merge-check
+
+  # Trusted, model-free: re-validates the verdict against live GitHub/control state
+  # and enqueues it. The review bridge then posts the review and guards any merge.
+  enqueue:
+    needs: review
+    if: needs.review.outputs.eligible == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: master
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Obtain cross-repo READ-ONLY worker App token
+        id: read-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.AUTONOMOUS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTONOMOUS_APP_PRIVATE_KEY }}
+          owner: AlexBDevCorner
+          repositories: |
+            AutonomousWork
+            RepoManager
+            MandarinBotNet
+            MtgSoloSports
+          permission-contents: read
+          permission-pull-requests: read
+          permission-checks: read
+      - uses: actions/download-artifact@v4
+        with:
+          name: verdict
+          path: ${{ runner.temp }}/verdict
+      - name: Re-validate and enqueue verdict
+        env:
+          GITHUB_TOKEN_READ: ${{ steps.read-token.outputs.token }}
+          REVIEW_BRIDGE_QUEUE_TOKEN: ${{ secrets.REVIEW_BRIDGE_QUEUE_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node tools/review-bridge/opencode-review.mjs enqueue "$RUNNER_TEMP/verdict/verdict.json"

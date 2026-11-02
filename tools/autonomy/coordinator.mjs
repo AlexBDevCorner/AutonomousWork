@@ -27,6 +27,32 @@ export function validateState(catalog, state, config) {
   }
 }
 
+export const REVIEW_WORKFLOW = 'autonomous-review.yml';
+export const MAX_REVIEW_RUNS = 3;
+export const reviewTitle = (mode, taskId, headSha) =>
+  `${mode === 'merge_check' ? 'merge-check' : 'review'} ${taskId} ${headSha}`;
+
+// One model review (or merge check) per exact head. The unique run title correlates uncertain
+// dispatches; failed runs (quota, provider, parse) are retried on later ticks up to MAX_REVIEW_RUNS.
+export async function dispatchReviews(items, config, api) {
+  if (!items.length) return;
+  const runs = await api.reviewRuns(config.controlRepository, REVIEW_WORKFLOW);
+  for (const item of items) {
+    const mine = runs.filter(r => r.display_title === reviewTitle(item.mode, item.taskId, item.headSha));
+    item.reviewRuns = mine.length;
+    if (mine.some(r => r.status !== 'completed' || r.conclusion === 'success') || mine.length >= MAX_REVIEW_RUNS) continue;
+    try {
+      await api.dispatch(config.controlRepository, { workflow: REVIEW_WORKFLOW, branch: config.controlBranch }, {
+        mode: item.mode, task_id: item.taskId, project_id: item.projectId, repository: item.repository,
+        pr: String(item.pr), head_sha: item.headSha });
+      item.reviewDispatch = 'sent';
+    } catch {
+      // Never assume the POST failed server-side; the next tick correlates by title.
+      item.reviewDispatch = 'unknown';
+    }
+  }
+}
+
 // All side effects are injected. This makes dispatch ordering, races, and ambiguous failures testable.
 export async function coordinate({ catalog, state: initial, config, sourceSha, taskTexts, api, apply = false,
   retryTaskId = null, reviewRecovery = null, now = Date.now(), newId = randomUUID }) {
@@ -68,8 +94,10 @@ export async function coordinate({ catalog, state: initial, config, sourceSha, t
       else if (ci.state === 'green' && review?.state === 'CHANGES_REQUESTED' &&
           budgetCounts(next).correction >= config.maxCorrectionRounds)
         next = { ...next, status: 'blocked', blockReason: 'autonomous_review_loop_exceeded' };
-      if (next.status === 'review' && ci.state === 'green' && !review && !pr.draft)
-        reviewQueue.push({ repository: e.repository, taskId: e.taskId, pr: pr.number,
+      // An approved but unmerged exact head needs a model-free MERGE_CHECK, never a second review.
+      if (next.status === 'review' && ci.state === 'green' && (!review || review.state === 'APPROVED') && !pr.draft)
+        reviewQueue.push({ mode: review ? 'merge_check' : 'review',
+          projectId: e.projectId, repository: e.repository, taskId: e.taskId, pr: pr.number,
           headSha: pr.head.sha, ciGreen: ciGreen(checks, config.requiredChecks),
           taskPath: task.relativePath, sourceControlSha: latestAttempt(e).sourceControlSha });
     }
@@ -140,5 +168,7 @@ export async function coordinate({ catalog, state: initial, config, sourceSha, t
   } else if (apply && (JSON.stringify(state) !== JSON.stringify(initial) || Object.keys(changes).length)) {
     await save('Reconcile autonomous execution state');
   }
+  if (apply && config.enabled)
+    await dispatchReviews(reviewQueue.filter(item => config.projects[item.projectId].reviewEnabled), config, api);
   return { selected, state, reviewQueue, summary: summary(model, state, config), applied: apply };
 }

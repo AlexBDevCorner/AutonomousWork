@@ -111,6 +111,10 @@ export class GitHub {
     await this.request('PATCH', `${prefix}/git/refs/heads/${branch}`, { sha: next.sha, force: false });
     return next.sha;
   }
+  reviewRuns(repository, workflow) {
+    const since = encodeURIComponent('>=' + new Date(Date.now() - 7 * 86400000).toISOString());
+    return this.pages(`/repos/${repository}/actions/workflows/${workflow}/runs?created=${since}`, 'workflow_runs');
+  }
   dispatch(repository, target, inputs) {
     return this.request('POST', `/repos/${repository}/actions/workflows/${target.workflow}/dispatches`,
       { ref: target.branch, inputs });

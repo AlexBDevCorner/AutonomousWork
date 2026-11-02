@@ -663,6 +663,56 @@ test('CI repair loop cap blocks instead of leaving a red PR in review forever', 
   assert.equal(result.state.executions[0].status, 'blocked');
   assert.equal(result.state.executions[0].blockReason, 'ci_repair_loop_exceeded');
 });
+test('green unreviewed exact head dispatches one bounded model review per head', async () => {
+  const run = (f, runs) => {
+    f.api.reviewRuns = async (...args) => { f.calls.push(['reviewRuns', ...args]); return runs; };
+    return coordinate({ ...f, apply: true });
+  };
+  const setup = (reviewEnabled = true) => {
+    const f = fixture(); f.config.projects.repomanager.reviewEnabled = reviewEnabled;
+    f.catalog.tasks[0].status = 'review';
+    f.taskTexts[f.catalog.tasks[0].relativePath] = Object.values(f.taskTexts)[0].replace('status: ready', 'status: review');
+    f.state.executions = [{ ...record(), status: 'review', pr: 1 }];
+    f.snapshot.prs = [pr({ draft: false })];
+    f.snapshot.checks[1] = [{ id: 11, name: 'build-and-test', status: 'completed', conclusion: 'success' }];
+    return f;
+  };
+  const title = 'review RM-001 ' + sha;
+  let f = setup(), result = await run(f, []);
+  const call = f.calls.find(c => c[0] === 'dispatch');
+  assert.deepEqual(call.slice(1), [f.config.controlRepository, { workflow: 'autonomous-review.yml', branch: 'master' },
+    { mode: 'review', task_id: 'RM-001', project_id: 'repomanager', repository: 'Owner/Repo', pr: '1', head_sha: sha }]);
+  assert.equal(result.reviewQueue[0].reviewDispatch, 'sent');
+  // Active, successful, or exhausted runs for the same head never trigger another model call.
+  for (const runs of [[{ display_title: title, status: 'queued' }], [{ display_title: title, status: 'completed', conclusion: 'success' }],
+    Array.from({ length: 3 }, () => ({ display_title: title, status: 'completed', conclusion: 'failure' }))]) {
+    f = setup(); await run(f, runs);
+    assert.equal(f.calls.some(c => c[0] === 'dispatch'), false);
+  }
+  f = setup(); await run(f, [{ display_title: title, status: 'completed', conclusion: 'failure' }]);
+  assert.equal(f.calls.filter(c => c[0] === 'dispatch').length, 1);
+  f = setup(); f.snapshot.prs[0].head.sha = 'c'.repeat(40);
+  await run(f, [{ display_title: title, status: 'completed', conclusion: 'success' }]);
+  assert.equal(f.calls.find(c => c[0] === 'dispatch')[3].head_sha, 'c'.repeat(40));
+  f = setup(); f.api.dispatch = async () => { throw new Error('timeout'); };
+  assert.equal((await run(f, [])).reviewQueue[0].reviewDispatch, 'unknown');
+  f = setup(false); await run(f, []);
+  assert.equal(f.calls.some(c => ['reviewRuns', 'dispatch'].includes(c[0])), false);
+  // A trusted exact-head approval gets a model-free merge check, under its own title.
+  const review = state => [{ id: 12, user: { login: 'review-bot' }, commit_id: sha, state, submitted_at: new Date(now).toISOString() }];
+  f = setup(); f.snapshot.reviews[1] = review('APPROVED');
+  await run(f, [{ display_title: title, status: 'completed', conclusion: 'success' }]);
+  assert.equal(f.calls.find(c => c[0] === 'dispatch')[3].mode, 'merge_check');
+  f = setup(); f.snapshot.reviews[1] = review('APPROVED');
+  await run(f, [{ display_title: 'merge-check RM-001 ' + sha, status: 'in_progress' }]);
+  assert.equal(f.calls.some(c => c[0] === 'dispatch'), false);
+  f = setup(); f.snapshot.reviews[1] = review('CHANGES_REQUESTED');
+  assert.equal((await run(f, [])).reviewQueue.length, 0);
+  f = setup(); await coordinate(f);
+  assert.equal(f.calls.length, 0);
+  f = setup(); f.config.enabled = false; await run(f, []);
+  assert.equal(f.calls.some(c => ['reviewRuns', 'dispatch'].includes(c[0])), false);
+});
 test('trusted current-head review can schedule one bounded correction', () => {
   const f = fixture(); f.catalog.tasks[0].status = 'review'; const e = { ...record(), status: 'review', pr: 1 }; f.state.executions = [e];
   f.snapshot.prs = [pr()]; f.snapshot.checks[1] = [{ id: 11, name: 'build-and-test', status: 'completed', conclusion: 'success' }];
