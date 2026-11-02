@@ -193,6 +193,8 @@ export async function coordinate({ catalog, state: initial, config, sourceSha, t
   }
   if (apply && arbitrating) {
     for (const { projectId, request } of arbitrationDispatches) {
+      // A claim made this tick (e.g. operator recovery) already resolved this dispute.
+      if (selected?.task.id === request.taskId) continue;
       try {
         await api.dispatch(config.controlRepository, { workflow: ARBITRATION_WORKFLOW, branch: config.controlBranch }, {
           task_id: request.taskId, project_id: projectId, repository: request.repository, pr: String(request.pr),

@@ -13,6 +13,8 @@ const sha = 'a'.repeat(40);
 function fixture() {
   const config = JSON.parse(readFileSync(new URL('../../automation/config.json', import.meta.url)));
   config.enabled = true;
+  // Tests opt into arbitration explicitly; the live control switch must not change their meaning.
+  config.arbitrationEnabled = false;
   config.reviewers = ['review-bot'];
   config.projects = { repomanager: config.projects.repomanager };
   const project = { id: 'repomanager', repository: 'Owner/Repo', enabled: true, maxActiveTasks: 1, relativePath: 'projects/repomanager/project.yaml' };
@@ -1071,6 +1073,12 @@ test('binding arbitration decisions are ledgered and routed by the dispatcher', 
   assert.equal(result.state.executions[0].arbitrations, undefined);
   f = setup(); publish(f, 'UPHOLD_WORKER'); f.runs[0].conclusion = 'failure';
   assert.equal((await coordinate({ ...f, apply: true })).state.executions[0].status, 'blocked');
+
+  // An operator recovery claimed in the same tick wins; no arbitration run starts for that dispute.
+  f = setup(); f.reviewRecovery = disagreementFixture().reviewRecovery;
+  result = await coordinate({ ...f, apply: true });
+  assert.equal(result.state.executions[0].attempts.at(-1).reason, 'operator_review_resolution');
+  assert.equal(dispatched(f, 'autonomous-arbitration.yml').length, 0);
 
   // Exhausted runs are recorded as an escalation exactly once.
   f = setup(); f.runs = Array(2).fill({ ...run, display_title: arbitrationTitle('RM-001', 12, sha), conclusion: 'failure' });
