@@ -125,6 +125,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # A fresh runner only has the CLI's bundled catalog, which lacks newer models.
+          opencode models --refresh > /dev/null
           opencode models "${REVIEWER_MODEL%%/*}" --verbose > "$RUNNER_TEMP/models.txt"
           node control/tools/review-bridge/opencode-review.mjs check-model "$RUNNER_TEMP/models.txt" "$REVIEWER_MODEL" "$REVIEWER_VARIANT"
       - name: Run OpenCode reviewer with read-only tools
