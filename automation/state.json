@@ -4912,7 +4912,7 @@
           "kind": "implementation",
           "startedAt": "2026-11-03T10:00:22.087Z",
           "sourceControlSha": "f5345ea9c8b9b9c7fbe83c049774e165928fd8c2",
-          "dispatchStatus": "pending"
+          "dispatchStatus": "sent"
         }
       ],
       "blockReason": null
