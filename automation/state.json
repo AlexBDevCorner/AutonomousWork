@@ -4732,7 +4732,7 @@
           "kind": "correction",
           "startedAt": "2026-11-03T01:40:22.753Z",
           "sourceControlSha": "653555c331502d83f23adfc3166932adf289bbc0",
-          "dispatchStatus": "pending",
+          "dispatchStatus": "sent",
           "reviewId": 5745927504,
           "headSha": "b48c8d71b73e24e4f50d759f98f882a9fc0daea3"
         }
