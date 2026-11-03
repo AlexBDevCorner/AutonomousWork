@@ -5050,7 +5050,7 @@
           "kind": "implementation",
           "startedAt": "2026-11-03T17:10:19.164Z",
           "sourceControlSha": "27eecc02c1b22639a59786fdffb7af2624377908",
-          "dispatchStatus": "pending"
+          "dispatchStatus": "sent"
         }
       ],
       "blockReason": null
