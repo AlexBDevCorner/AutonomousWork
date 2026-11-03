@@ -4923,7 +4923,7 @@
           "kind": "correction",
           "startedAt": "2026-11-03T11:00:17.915Z",
           "sourceControlSha": "3c50a5398ce0627fac019ac60e288d0cd5191c97",
-          "dispatchStatus": "pending",
+          "dispatchStatus": "sent",
           "reviewId": 5750998806,
           "headSha": "e6b879405bceb2392f82326028f245b79e2f4541"
         }
