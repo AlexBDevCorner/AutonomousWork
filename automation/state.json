@@ -5263,7 +5263,7 @@
           "kind": "implementation",
           "startedAt": "2026-11-04T03:10:21.404Z",
           "sourceControlSha": "40edce7d16752d91fda196379b925537868dfb16",
-          "dispatchStatus": "pending"
+          "dispatchStatus": "sent"
         }
       ],
       "blockReason": null
