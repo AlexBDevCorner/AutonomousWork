@@ -5592,7 +5592,7 @@
           "kind": "correction",
           "startedAt": "2026-11-04T21:40:47.503Z",
           "sourceControlSha": "b41c26c09568c85316aabe15d7be15f0253aaca2",
-          "dispatchStatus": "pending",
+          "dispatchStatus": "sent",
           "reviewId": 5776194658,
           "headSha": "c9f83e84da998fa9daf81f1b15beee70b30286c0"
         }
