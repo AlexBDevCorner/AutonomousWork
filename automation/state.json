@@ -5619,7 +5619,7 @@
           "kind": "implementation",
           "startedAt": "2026-11-04T22:40:18.262Z",
           "sourceControlSha": "10a18fd653965e934afa297cb3bd4321f73b7eae",
-          "dispatchStatus": "pending"
+          "dispatchStatus": "sent"
         }
       ],
       "blockReason": null
