@@ -5693,7 +5693,7 @@
           "kind": "correction",
           "startedAt": "2026-11-05T05:10:16.463Z",
           "sourceControlSha": "ad17f7fffba18eb8a1604caccc7086a8fddb71e3",
-          "dispatchStatus": "pending",
+          "dispatchStatus": "sent",
           "reviewId": 5780145784,
           "headSha": "e8b438419baa01963bb44be7e0b764d6ae00bb26"
         }
