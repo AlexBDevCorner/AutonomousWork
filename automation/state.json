@@ -5785,7 +5785,11 @@
           "sourceControlSha": "64232d33e920469321ab62321ecbd90e50ea0a88",
           "dispatchStatus": "sent",
           "reviewId": 5784154866,
-          "headSha": "aa27731bc9b63a99f9eba8d124eb419a361c9662"
+          "headSha": "aa27731bc9b63a99f9eba8d124eb419a361c9662",
+          "runId": 42019786454,
+          "runUrl": "https://github.com/AlexBDevCorner/MtgSoloSports/actions/runs/42019786454",
+          "conclusion": null,
+          "completedAt": null
         }
       ],
       "blockReason": null,
