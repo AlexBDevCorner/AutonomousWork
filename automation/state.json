@@ -5719,7 +5719,7 @@
           "kind": "correction",
           "startedAt": "2026-11-05T07:10:26.053Z",
           "sourceControlSha": "ff46a5edd91b964facb4ff70629c31b87c6de4e4",
-          "dispatchStatus": "pending",
+          "dispatchStatus": "sent",
           "reviewId": 5781073413,
           "headSha": "5675ea2a9682583984b4874fc854296907b13e5f"
         }
