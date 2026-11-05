@@ -5759,7 +5759,7 @@
           "kind": "implementation",
           "startedAt": "2026-11-05T09:10:15.072Z",
           "sourceControlSha": "3f35de79bedf19b7a8c16de7936a9b4429c212b9",
-          "dispatchStatus": "pending"
+          "dispatchStatus": "sent"
         }
       ],
       "blockReason": null
