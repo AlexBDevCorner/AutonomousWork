@@ -6112,7 +6112,7 @@
           "kind": "correction",
           "startedAt": "2026-11-17T14:40:23.301Z",
           "sourceControlSha": "241598b9507b2036dfabac25e6fb1c0d7ea94ae8",
-          "dispatchStatus": "pending",
+          "dispatchStatus": "sent",
           "reviewId": 5940448148,
           "headSha": "306a7587968dfd452e80e588f59e97fc987775bd"
         }
