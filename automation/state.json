@@ -6163,7 +6163,7 @@
           "kind": "correction",
           "startedAt": "2026-11-19T23:40:20.280Z",
           "sourceControlSha": "7a2db94cbc1b87d5c91ea0c24c296b826b29c71e",
-          "dispatchStatus": "pending",
+          "dispatchStatus": "sent",
           "reviewId": 5985132565,
           "headSha": "1d3a2a36cf91ad3c7b03b7559ccbb74d5e304e55"
         }
