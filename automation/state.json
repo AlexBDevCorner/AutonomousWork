@@ -6150,7 +6150,7 @@
           "kind": "correction",
           "startedAt": "2026-11-19T21:30:17.533Z",
           "sourceControlSha": "b4543bab8aadce1ef27a0a12f210e9ca0f7ca780",
-          "dispatchStatus": "pending",
+          "dispatchStatus": "sent",
           "reviewId": 5983633117,
           "headSha": "30453eb9a78d90cf79b37f9509e8919038407a09"
         }
