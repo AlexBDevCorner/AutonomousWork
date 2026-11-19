@@ -6139,7 +6139,7 @@
           "kind": "implementation",
           "startedAt": "2026-11-19T17:40:16.427Z",
           "sourceControlSha": "5aa0bf3593e1641e59d60e4e50c5d08781c71331",
-          "dispatchStatus": "pending"
+          "dispatchStatus": "sent"
         }
       ],
       "blockReason": null
