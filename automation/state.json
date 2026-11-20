@@ -6290,7 +6290,7 @@
           "kind": "implementation",
           "startedAt": "2026-11-20T10:10:22.074Z",
           "sourceControlSha": "d5652e5dac205d05a611ff3615ae2a2785a6fd88",
-          "dispatchStatus": "pending",
+          "dispatchStatus": "sent",
           "reason": "ci_repair",
           "headSha": "c41c6ee2edbc964f1b786976871fbfabcd4e3bf9"
         }
