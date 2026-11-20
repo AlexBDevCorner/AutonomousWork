@@ -6189,7 +6189,7 @@
           "kind": "correction",
           "startedAt": "2026-11-20T02:40:21.860Z",
           "sourceControlSha": "d12b3c9ef9f7d44d7e3fa24bd25c4ff98c70dc0d",
-          "dispatchStatus": "pending",
+          "dispatchStatus": "sent",
           "reviewId": 5986641886,
           "headSha": "c6ba1c3692303896f1d29c089bcf2475068fe64f"
         }
