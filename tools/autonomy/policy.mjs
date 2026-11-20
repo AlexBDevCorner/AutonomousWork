@@ -58,8 +58,8 @@ export function latestReview(pr, reviews, reviewers) {
     .sort((a, b) => Date.parse(a.submitted_at) - Date.parse(b.submitted_at) || a.id - b.id).at(-1);
 }
 
-function claimedCorrectionRun(attempt, run, { repository, taskId, target }) {
-  return attempt.kind === 'correction' && Number.isSafeInteger(run?.id) && run.id > 0 &&
+function claimedWorkerRun(attempt, run, { repository, taskId, target }) {
+  return Number.isSafeInteger(run?.id) && run.id > 0 &&
     (!attempt.runId || attempt.runId === run.id) && run.run_attempt === 1 &&
     run.display_title === runTitle(taskId, attempt.id) && run.event === 'workflow_dispatch' &&
     run.path === `.github/workflows/${target.workflow}` && run.head_branch === target.branch &&
@@ -78,7 +78,7 @@ export function reviewDisagreement(pr, comments, reviewId, reviewedHead, context
   if (!/^[1-9][0-9]*$/.test(String(reviewId)) || !/^[a-f0-9]{40}$/.test(reviewedHead) ||
       String(attempt.reviewId) !== String(reviewId) || attempt.headSha !== reviewedHead ||
       pr.head.sha !== reviewedHead || pr.head.ref !== `autonomous/${context.taskId}` ||
-      pr.head.repo?.full_name !== repository || !claimedCorrectionRun(attempt, run, context)) return;
+      pr.head.repo?.full_name !== repository || attempt.kind !== 'correction' || !claimedWorkerRun(attempt, run, context)) return;
   const start = Date.parse(run.run_started_at);
   const end = run.status === 'completed' ? Date.parse(run.updated_at) : now;
   if (!Number.isFinite(end) || end < start || end > now) return;
@@ -252,6 +252,8 @@ export function chooseRetry(taskId, catalog, state, snapshots, config, now, revi
     return null;
 
   const attempt = execution.attempts.at(-1);
+  const missingPr = execution.blockReason === 'worker_succeeded_without_pull_request';
+  if (missingPr && (attempt?.kind !== 'implementation' || attempt.reason || attempt.headSha)) return null;
   const resolvingReview = reviewRecovery?.taskId === taskId && attempt?.kind === 'correction' &&
     ['autonomous_review_disagreement', 'correction_did_not_advance_head'].includes(execution.blockReason);
   if (reviewRecovery && !resolvingReview) return null;
@@ -260,7 +262,7 @@ export function chooseRetry(taskId, catalog, state, snapshots, config, now, revi
   const arbitrated = !reviewRecovery && config.arbitrationEnabled === true && attempt?.kind === 'correction' && attempt.reason !== 'arbitration_resolution' &&
     execution.blockReason === 'autonomous_review_disagreement' &&
     decidedArbitration(execution, attempt.reviewId, attempt.headSha, 'correction');
-  const expectedConclusion = resolvingReview || arbitrated ? 'success' : retryableWorkerFailures.get(execution.blockReason);
+  const expectedConclusion = resolvingReview || arbitrated || missingPr ? 'success' : retryableWorkerFailures.get(execution.blockReason);
   if (!expectedConclusion || !['implementation', 'correction'].includes(attempt?.kind) ||
       attempt.conclusion !== expectedConclusion || !attempt.runId || !attempt.completedAt)
     return null;
@@ -282,6 +284,14 @@ export function chooseRetry(taskId, catalog, state, snapshots, config, now, revi
     pr.head.repo?.full_name === project.repository);
   if (taskPrs.length > 1) return null;
   const taskPr = taskPrs[0];
+  if (missingPr) {
+    // A completed implementation with no PR is an unsuccessful attempt, even if the CLI exited zero.
+    const runs = snapshot.runs.filter(r => r.display_title === runTitle(taskId, attempt.id));
+    if (taskPr || runs.length !== 1 || !claimedWorkerRun(attempt, runs[0], {
+      repository: project.repository, taskId, target: config.projects[project.id],
+    }) || runs[0].status !== 'completed' || runs[0].conclusion !== 'success' ||
+        runs[0].updated_at !== attempt.completedAt) return null;
+  }
   if (taskPr && (taskPr.state !== 'open' || taskPr.base.ref !== config.projects[project.id].branch ||
       taskPr.mergeable === false)) return null;
 
@@ -302,7 +312,7 @@ export function chooseRetry(taskId, catalog, state, snapshots, config, now, revi
           reviewRecovery.headSha !== attempt.headSha) return null;
       const runs = snapshot.runs.filter(r => r.display_title === runTitle(taskId, attempt.id));
       const run = runs[0];
-      if (runs.length !== 1 || !claimedCorrectionRun(attempt, run, { repository: project.repository, taskId,
+      if (runs.length !== 1 || !claimedWorkerRun(attempt, run, { repository: project.repository, taskId,
         target: config.projects[project.id] }) || run.status !== 'completed' || run.conclusion !== 'success' ||
         run.updated_at !== attempt.completedAt) return null;
       const resolution = reviewResolution(taskPr, snapshot.comments?.[taskPr.number] ?? [], {
@@ -314,7 +324,7 @@ export function chooseRetry(taskId, catalog, state, snapshots, config, now, revi
     }
     if (arbitrated) {
       const runs = snapshot.runs.filter(r => r.display_title === runTitle(taskId, attempt.id));
-      if (runs.length !== 1 || !claimedCorrectionRun(attempt, runs[0], { repository: project.repository, taskId,
+      if (runs.length !== 1 || !claimedWorkerRun(attempt, runs[0], { repository: project.repository, taskId,
         target: config.projects[project.id] }) || runs[0].conclusion !== 'success') return null;
       return { project, task, kind: 'correction', reason: 'arbitration_resolution', retry: true, pr: taskPr.number,
         headSha: attempt.headSha, reviewId: attempt.reviewId, arbitration: { fingerprint: arbitrated.fingerprint,

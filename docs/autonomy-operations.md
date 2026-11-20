@@ -98,6 +98,11 @@ retry up to `maxAttempts`; failed review corrections retry up to
 `maxCorrectionRounds` only while the same trusted changes-requested review,
 exact PR head, open non-draft PR, and passing required CI are still present.
 Any head/review change or exhausted budget stops automatic correction recovery.
+An implementation that exits successfully but produces no PR is also retried
+within `maxAttempts`. Recovery requires the original completed successful run
+to match its claim and no task PR to have appeared; it preserves that successful
+run in the ledger and appends a fresh implementation attempt. This does not
+release unchanged-head corrections, CI repairs, or review disagreements.
 Partial progress is preserved by the target workflow before the failed run ends. A correction normally must advance the PR head past
 the reviewed SHA and then returns to review. The one intentional exception is an
 explicit developer disagreement: the worker leaves the reviewed head unchanged
@@ -146,6 +151,8 @@ never delete the ledger to reset counters. A blocked implementation or review co
 observed worker run ended in `failure`, `cancelled`, or `timed_out` is
 normally retried on the next reconciliation pass, provided its separate
 attempt budget and the relevant task/PR/review guards remain valid.
+A blocked `worker_succeeded_without_pull_request` implementation is eligible
+for the same automatic or explicit retry under the no-PR guards above.
 A failed correction is never converted into an implementation, and a stale
 or superseded blocking review is never replayed. An explicit operator
 retry remains available when needed:

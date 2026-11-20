@@ -228,6 +228,86 @@ test('successful worker without PR is a failure', () => {
   const f = fixture(); f.snapshot.runs = [completed()];
   assert.equal(reconcile(record(), f.snapshot, f.config, now).blockReason, 'worker_succeeded_without_pull_request');
 });
+
+function missingPullRequestFixture() {
+  const f = fixture();
+  f.catalog.tasks[0].status = 'blocked';
+  f.taskTexts[f.catalog.tasks[0].relativePath] = Object.values(f.taskTexts)[0].replace('status: ready', 'status: blocked');
+  const oldId = '00000000-0000-0000-0000-000000000099';
+  const e = record();
+  e.attempts[0].id = oldId;
+  f.snapshot.runs = [completed({ display_title: runTitle('RM-001', oldId), run_attempt: 1,
+    event: 'workflow_dispatch', path: '.github/workflows/autonomous-worker.yml', head_branch: 'master',
+    repository: { full_name: 'Owner/Repo' }, head_repository: { full_name: 'Owner/Repo' },
+    run_started_at: e.attempts[0].startedAt })];
+  f.state.executions = [reconcile(e, f.snapshot, f.config, now)];
+  return f;
+}
+
+test('success without a PR retries with a new claim and preserves the successful run history', async () => {
+  for (const retryTaskId of [null, 'RM-001']) {
+    const f = missingPullRequestFixture();
+    const before = structuredClone(f.state.executions[0].attempts[0]);
+    const result = await coordinate({ ...f, apply: true, retryTaskId });
+    const e = result.state.executions[0];
+    assert.equal(e.status, 'in_progress');
+    assert.equal(e.blockReason, null);
+    assert.equal(e.attempts.length, 2);
+    assert.deepEqual(e.attempts[0], before);
+    assert.equal(e.attempts[1].id, id);
+    assert.equal(e.attempts[1].kind, 'implementation');
+    assert.deepEqual(f.calls.map(c => c[0]), ['commit', 'dispatch', 'commit']);
+    assert.equal(f.calls[1][3].attempt_id, id);
+    assert.equal(f.calls[1][3].control_commit, 'b'.repeat(40));
+  }
+});
+
+test('missing-PR recovery respects budgets, switches, dependencies, overlap and fresh run evidence', () => {
+  const mutations = {
+    'budget exhausted': f => { f.config.maxAttempts = 1; },
+    paused: f => { f.config.enabled = false; },
+    'project paused': f => { f.catalog.projects[0].enabled = false; },
+    dependency: f => { f.catalog.tasks[0].dependsOn = ['RM-002']; },
+    'active worker': f => { f.snapshot.runs.push({ status: 'in_progress' }); },
+    'PR appeared': f => { f.snapshot.prs = [pr()]; },
+    'other PR': f => { f.snapshot.prs = [pr({ head: { ref: 'autonomous/RM-002', repo: { full_name: 'Owner/Repo' } } })]; },
+    correction: f => { f.state.executions[0].attempts[0].kind = 'correction'; },
+    'CI repair': f => { f.state.executions[0].attempts[0].reason = 'ci_repair'; },
+    'no observed run': f => { f.snapshot.runs = []; },
+    'duplicate run': f => { f.snapshot.runs.push({ ...f.snapshot.runs[0], id: 9 }); },
+    'wrong run ID': f => { f.snapshot.runs[0].id = 9; },
+    'wrong workflow': f => { f.snapshot.runs[0].path = '.github/workflows/other.yml'; },
+    'wrong branch': f => { f.snapshot.runs[0].head_branch = 'other'; },
+    'wrong repository': f => { f.snapshot.runs[0].repository.full_name = 'Owner/Other'; },
+    'wrong head repository': f => { f.snapshot.runs[0].head_repository.full_name = 'Owner/Other'; },
+    'wrong event': f => { f.snapshot.runs[0].event = 'push'; },
+    'rerun claim': f => { f.snapshot.runs[0].run_attempt = 2; },
+    'changed conclusion': f => { f.snapshot.runs[0].conclusion = 'failure'; },
+    'run predates claim': f => { f.snapshot.runs[0].run_started_at = new Date(now - 120000).toISOString(); },
+  };
+  for (const [name, mutate] of Object.entries(mutations)) {
+    const f = missingPullRequestFixture(); mutate(f);
+    assert.equal(chooseRetry('RM-001', f.catalog, f.state, { repomanager: f.snapshot }, f.config, now), null, name);
+  }
+});
+
+test('missing-PR recovery rechecks before claiming and does not resend an ambiguous dispatch', async () => {
+  let f = missingPullRequestFixture(), reads = 0;
+  f.api.snapshot = async () => ++reads === 1 ? structuredClone(f.snapshot) : { ...f.snapshot, prs: [pr()] };
+  await assert.rejects(() => coordinate({ ...f, apply: true }), /Target changed/);
+  assert.deepEqual(f.calls, []);
+
+  f = missingPullRequestFixture();
+  f.api.dispatch = async () => { f.calls.push(['dispatch']); throw new Error('response lost'); };
+  const result = await coordinate({ ...f, apply: true });
+  f.state = result.state;
+  f.catalog.tasks[0].status = 'in_progress';
+  f.taskTexts[f.catalog.tasks[0].relativePath] = f.calls[0][4][f.catalog.tasks[0].relativePath];
+  const next = await coordinate({ ...f, apply: true });
+  assert.equal(next.selected, null);
+  assert.equal(f.calls.filter(c => c[0] === 'dispatch').length, 1);
+  assert.equal(next.state.executions[0].attempts.length, 2);
+});
 test('correction that leaves the PR head unchanged blocks instead of deadlocking in review', () => {
   const correctionId = '00000000-0000-0000-0000-000000000002';
   const correctionRecord = () => {
