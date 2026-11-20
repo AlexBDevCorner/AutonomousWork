@@ -6317,7 +6317,7 @@
           "kind": "implementation",
           "startedAt": "2026-11-20T11:30:26.877Z",
           "sourceControlSha": "f6b2669273be9f31856480cb9cab70a778ef99b9",
-          "dispatchStatus": "pending"
+          "dispatchStatus": "sent"
         }
       ],
       "blockReason": null
