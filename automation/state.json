@@ -6353,7 +6353,7 @@
           "kind": "implementation",
           "startedAt": "2026-11-20T16:40:43.541Z",
           "sourceControlSha": "f1ad614a3e548fda8c4c83da985ddd6b94d235cf",
-          "dispatchStatus": "pending"
+          "dispatchStatus": "sent"
         }
       ],
       "blockReason": null
