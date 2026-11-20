@@ -167,7 +167,7 @@ Automatic execution: enabled.
 | mtgsolosports | MSS-149 | done | [#156](https://github.com/AlexBDevCorner/MtgSoloSports/pull/156) | 1/10 / 0/15 / 0/15 / 0 | success |
 | mtgsolosports | MSS-150 | done | [#157](https://github.com/AlexBDevCorner/MtgSoloSports/pull/157) | 1/10 / 0/15 / 0/15 / 0 | success |
 | mtgsolosports | MSS-151 | done | [#158](https://github.com/AlexBDevCorner/MtgSoloSports/pull/158) | 1/10 / 0/15 / 0/15 / 0 | success |
-| mtgsolosports | MSS-152 | in_progress |  | 1/10 / 0/15 / 0/15 / 0 | pending |
+| mtgsolosports | MSS-152 | review | [#159](https://github.com/AlexBDevCorner/MtgSoloSports/pull/159) | 1/10 / 0/15 / 0/15 / 0 | success |
 | repomanager | RM-003 | done | [#22](https://github.com/AlexBDevCorner/RepoManager/pull/22) | 4/10 / 0/15 / 0/15 / 0 | success |
 | repomanager | RM-004 | done | [#23](https://github.com/AlexBDevCorner/RepoManager/pull/23) | 2/10 / 0/15 / 0/15 / 0 | success |
 | repomanager | RM-005 | done | [#25](https://github.com/AlexBDevCorner/RepoManager/pull/25) | 2/10 / 0/15 / 0/15 / 0 | success |
