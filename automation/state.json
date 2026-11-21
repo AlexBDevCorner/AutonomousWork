@@ -6503,7 +6503,7 @@
           "kind": "implementation",
           "startedAt": "2026-11-21T03:00:15.400Z",
           "sourceControlSha": "44e1c7d1cc8b7c71e225b48a6050da56941ec4c9",
-          "dispatchStatus": "pending"
+          "dispatchStatus": "sent"
         }
       ],
       "blockReason": null
